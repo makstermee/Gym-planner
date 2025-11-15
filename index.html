@@ -3,24 +3,21 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Plan Treningowy - Maksymalna Wersja</title>
+<title>Plan Treningowy SPA 💪</title>
 <link rel="stylesheet" href="style.css">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
+
 <header class="top">
-  <h1>Plan Treningowy 💪</h1>
+  <h1>Plan Treningowy</h1>
 </header>
 
 <main class="container">
-  <section class="card">
-    <h2>Ustawienia</h2>
-    <input id="username" placeholder="Twoje imię..." />
-    <select id="daySelect"></select>
-  </section>
 
-  <section class="card">
-    <h2>Dodaj ćwiczenie</h2>
+  <!-- Sekcja: Plan Treningowy -->
+  <section id="section-plan" class="panel active">
+    <h2>Plan Treningowy</h2>
     <input id="exerciseName" placeholder="Nazwa ćwiczenia" />
     <div class="row">
       <input id="sets" type="number" min="1" value="3" />
@@ -28,14 +25,11 @@
       <input id="weight" type="number" min="0" value="50" />
     </div>
     <button id="addExercise">Dodaj ćwiczenie</button>
+    <div id="exerciseList" class="exercise-list"></div>
   </section>
 
-  <section class="card">
-    <h2>Plan dnia</h2>
-    <div id="exerciseList"></div>
-  </section>
-
-  <section class="card">
+  <!-- Sekcja: Timer -->
+  <section id="section-timer" class="panel">
     <h2>Timer między seriami ⏱️</h2>
     <div id="timerDisplay">00:00</div>
     <div class="row">
@@ -46,18 +40,41 @@
     </div>
   </section>
 
-  <section class="card">
+  <!-- Sekcja: Historia i Progres -->
+  <section id="section-history" class="panel">
     <h2>Historia i Progres 📈</h2>
-    <div id="logArea"></div>
-    <canvas id="progressChart" height="120"></canvas>
-    <button id="clearHistory">Wyczyść historię</button>
-    <button id="exportBtn">Eksport JSON</button>
-    <button id="importBtn">Import JSON</button>
-    <input type="file" id="fileInput" style="display:none" accept=".json">
+    <div id="logArea" class="log-area"></div>
+    <canvas id="progressChart" height="150"></canvas>
+    <div class="row">
+      <button id="clearHistory">Wyczyść historię</button>
+      <button id="exportBtn">Eksport JSON</button>
+      <button id="importBtn">Import JSON</button>
+      <input type="file" id="fileInput" style="display:none" accept=".json">
+    </div>
   </section>
+
+  <!-- Sekcja: Ustawienia -->
+  <section id="section-settings" class="panel">
+    <h2>Ustawienia ⚙️</h2>
+    <label>Twoje imię:</label>
+    <input id="username" placeholder="Imię..." />
+    <label>Motyw:</label>
+    <select id="themeSelect">
+      <option value="light">Jasny</option>
+      <option value="dark">Ciemny</option>
+    </select>
+    <button id="resetData">Reset danych</button>
+  </section>
+
 </main>
 
-<footer class="bottom">© Twoja aplikacja treningowa</footer>
+<!-- Dolne Menu -->
+<nav class="bottom-nav">
+  <button data-section="section-plan">🏋️‍♂️ Plan</button>
+  <button data-section="section-history">📜 Historia</button>
+  <button data-section="section-timer">⏱️ Timer</button>
+  <button data-section="section-settings">⚙️ Ustawienia</button>
+</nav>
 
 <script src="app.js"></script>
 </body>

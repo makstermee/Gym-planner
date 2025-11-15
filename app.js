@@ -1,6 +1,8 @@
+// KLUCZ DO LOCAL STORAGE - Zmieniony, aby uniknąć konfliktów
+const STORAGE_KEY = 'trening_pro_v3';
+
 // --- Inicjalizacja stanu ---
-// ZUPEŁNIE NOWA STRUKTURA STANU
-let state = JSON.parse(localStorage.getItem('trening_pro_v2') || `{
+const defaultState = {
   "username": "",
   "theme": "light",
   "plans": {
@@ -17,30 +19,51 @@ let state = JSON.parse(localStorage.getItem('trening_pro_v2') || `{
     "isActive": false,
     "dayName": null,
     "startTime": null,
-    "totalTimerInterval": null,
+    "totalTimerInterval": null, // ID interwału JS
     "exercises": []
   },
   "restTimer": {
-    "interval": null,
+    "interval": null, // ID interwału JS
     "displayElement": null,
     "secondsLeft": 0
   }
-}`);
+};
 
-// --- Zmienne globalne ---
+let state = JSON.parse(localStorage.getItem(STORAGE_KEY) || JSON.stringify(defaultState));
+// Użyj domyślnej struktury, jeśli wczytane dane są uszkodzone (np. stare wersje)
+if (!state.plans || !state.activeWorkout) {
+  state = defaultState;
+  saveState();
+}
+
+
+// --- Zmienne globalne DOM ---
 const panels = document.querySelectorAll('.panel');
 const welcomeMsg = document.getElementById('welcomeMsg');
 const dayList = document.getElementById('dayList');
 const logArea = document.getElementById('logArea');
 const masterTimerDisplay = document.getElementById('masterTimerDisplay');
-let statsChart = null; // Zmienna dla wykresu
+let statsChart = null;
 let currentDay = null; // Przechowuje dzień wybrany do edycji/treningu
+
+// --- Zapis stanu ---
+function saveState() {
+  // Zapisz tylko dane, które można serializować (bez interwałów)
+  const stateToSave = { ...state };
+  if (stateToSave.activeWorkout) {
+    stateToSave.activeWorkout.totalTimerInterval = null;
+  }
+  if (stateToSave.restTimer) {
+    stateToSave.restTimer.interval = null;
+    stateToSave.restTimer.displayElement = null; // Nie można serializować elementu DOM
+  }
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(stateToSave));
+}
 
 // --- Główny System Nawigacji ---
 
-// Pokaż panel i ukryj resztę
 function showPanel(panelId) {
-  // Jeśli trening jest aktywny, nie pozwól na nawigację poza panel treningu
+  // Jeśli trening jest aktywny, wymuś pozostanie w panelu treningu
   if (state.activeWorkout.isActive && panelId !== 'panel-active-workout') {
     alert("Najpierw zakończ aktywny trening!");
     return;
@@ -48,7 +71,6 @@ function showPanel(panelId) {
   panels.forEach(p => p.classList.remove('active'));
   document.getElementById(panelId).classList.add('active');
 
-  // Specjalna logika dla panelu statystyk (inicjalizacja/aktualizacja)
   if (panelId === 'panel-stats') {
     if (!statsChart) {
       initStatsChart();
@@ -57,21 +79,17 @@ function showPanel(panelId) {
   }
 }
 
-// Dolne menu nawigacyjne
 document.querySelectorAll('.bottom-nav button').forEach(btn => {
-  btn.onclick = () => {
-    showPanel(btn.dataset.panel);
-  }
+  btn.onclick = () => showPanel(btn.dataset.panel);
 });
 
-// Przyciski "Wróć"
 document.getElementById('backToMainBtn').onclick = () => showPanel('panel-main');
 document.getElementById('savePlanChangesBtn').onclick = () => {
-  saveState(); // Zapisz zmiany w planie
-  showPlanDetails(currentDay); // Wróć do podglądu planu
+  saveState();
+  showPlanDetails(currentDay);
 };
 
-// --- Ustawienia i Motyw (bez zmian) ---
+// --- Ustawienia i Motyw ---
 const usernameInput = document.getElementById('username');
 usernameInput.value = state.username;
 usernameInput.onchange = e => { state.username = e.target.value; saveState(); updateWelcome(); }
@@ -81,32 +99,30 @@ function updateWelcome() {
 
 const themeSelect = document.getElementById('themeSelect');
 themeSelect.value = state.theme;
+function applyTheme() { document.body.classList.toggle('dark', state.theme === 'dark'); }
 applyTheme();
 themeSelect.onchange = e => { state.theme = e.target.value; applyTheme(); saveState(); }
-function applyTheme() { document.body.classList.toggle('dark', state.theme === 'dark'); }
 
 document.getElementById('resetData').onclick = () => {
   if (confirm('JESTEŚ PEWIEN? Spowoduje to usunięcie WSZYSTKICH planów, historii i ustawień.')) {
-    localStorage.removeItem('trening_pro_v2');
+    localStorage.removeItem(STORAGE_KEY);
     location.reload();
   }
 }
 
 // --- Logika Planów Treningowych (REQ 1, 2) ---
 
-// 1. Renderowanie Głównego Panelu (Lista Dni)
 function renderDayList() {
   dayList.innerHTML = '';
   Object.keys(state.plans).forEach(dayName => {
     const btn = document.createElement('button');
     btn.className = 'day-btn';
-    btn.textContent = dayName;
+    btn.textContent = `${dayName} (${state.plans[dayName].length} ćw.)`;
     btn.onclick = () => showPlanDetails(dayName);
     dayList.appendChild(btn);
   });
 }
 
-// 2. Pokazywanie Szczegółów Planu (Podgląd)
 function showPlanDetails(dayName) {
   currentDay = dayName;
   document.getElementById('planDetailsTitle').textContent = `Plan: ${dayName}`;
@@ -114,7 +130,7 @@ function showPlanDetails(dayName) {
   list.innerHTML = '';
 
   if (state.plans[dayName].length === 0) {
-    list.innerHTML = '<p>Brak ćwiczeń w planie. Dodaj je w edytorze.</p>';
+    list.innerHTML = '<p style="color:var(--muted)">Brak ćwiczeń w planie. Kliknij "Edytuj Plan", aby je dodać.</p>';
   }
 
   state.plans[dayName].forEach(ex => {
@@ -129,34 +145,31 @@ function showPlanDetails(dayName) {
     list.appendChild(div);
   });
 
-  // Ustawienie przycisków
   document.getElementById('editPlanBtn').onclick = () => showPlanEditor(dayName);
   document.getElementById('startWorkoutBtn').onclick = () => startWorkout(dayName);
 
   showPanel('panel-plan-details');
 }
 
-// 3. Pokazywanie Edytora Planu
 function showPlanEditor(dayName) {
   currentDay = dayName;
   document.getElementById('editPlanTitle').textContent = `Edytuj: ${dayName}`;
   renderEditPlanList();
   
-  // Logika dodawania ćwiczenia
+  // Przypisanie funkcji do przycisku dodawania
   document.getElementById('addExerciseBtn').onclick = () => {
     const name = document.getElementById('exName').value;
     const sets = +document.getElementById('exTargetSets').value;
     const reps = +document.getElementById('exTargetReps').value;
 
-    if (!name || !sets || !reps) {
-      alert('Wypełnij wszystkie pola ćwiczenia!');
+    if (!name || sets < 1 || reps < 1) {
+      alert('Wypełnij wszystkie pola poprawnymi wartościami (min. 1).');
       return;
     }
 
     state.plans[dayName].push({ name: name, targetSets: sets, targetReps: reps });
     saveState();
-    renderEditPlanList(); // Odśwież listę
-    // Wyczyść formularz
+    renderEditPlanList();
     document.getElementById('exName').value = '';
     document.getElementById('exTargetSets').value = '';
     document.getElementById('exTargetReps').value = '';
@@ -165,7 +178,6 @@ function showPlanEditor(dayName) {
   showPanel('panel-edit-plan');
 }
 
-// 3a. Renderowanie listy w edytorze (z przyciskami 'Usuń')
 function renderEditPlanList() {
   const list = document.getElementById('editPlanList');
   list.innerHTML = '';
@@ -183,7 +195,7 @@ function renderEditPlanList() {
       if (confirm(`Usunąć "${ex.name}" z planu?`)) {
         state.plans[currentDay].splice(index, 1);
         saveState();
-        renderEditPlanList(); // Odśwież
+        renderEditPlanList();
       }
     };
     list.appendChild(div);
@@ -194,20 +206,24 @@ function renderEditPlanList() {
 
 // 1. Start Treningu
 function startWorkout(dayName) {
+  if (state.plans[dayName].length === 0) {
+    return alert("Ten plan jest pusty. Najpierw dodaj ćwiczenia, aby zacząć.");
+  }
+
   if (!confirm(`Rozpocząć trening: ${dayName}?`)) return;
 
-  state.activeWorkout = {
-    isActive: true,
-    dayName: dayName,
-    startTime: Date.now(),
-    totalTimerInterval: setInterval(updateMasterTimer, 1000),
-    // GŁĘBOKA KOPIA planu, aby dodać logi serii
-    exercises: state.plans[dayName].map(ex => ({
-      ...ex, // Kopiuje name, targetSets, targetReps
-      loggedSets: [] // Dodaje nowe pole na wykonane serie
-    }))
-  };
+  state.activeWorkout.isActive = true;
+  state.activeWorkout.dayName = dayName;
+  state.activeWorkout.startTime = Date.now();
+  state.activeWorkout.exercises = state.plans[dayName].map(ex => ({
+    ...ex,
+    loggedSets: [] // Dodaje nowe pole na wykonane serie
+  }));
 
+  // Wystartuj główny timer
+  clearInterval(state.activeWorkout.totalTimerInterval); // Upewnij się, że nie ma starego
+  state.activeWorkout.totalTimerInterval = setInterval(updateMasterTimer, 1000);
+  
   masterTimerDisplay.style.display = 'block';
   updateMasterTimer();
   renderActiveWorkout();
@@ -230,43 +246,45 @@ function renderActiveWorkout() {
       <div class="logged-set" data-set-index="${setIndex}">
         <span class="set-number">Seria ${setIndex + 1}:</span>
         <span class="set-data">${set.weight} kg x ${set.reps} powt.</span>
-        <span class="set-remove" data-ex-index="${exIndex}" data-set-index="${setIndex}">Usuń</span>
+        <span class="set-remove" data-ex-index="${exIndex}" data-set-index="${setIndex}">[x]</span>
       </div>
     `).join('');
 
     card.innerHTML = `
       <h3>${ex.name}</h3>
-      <small>Cel: ${ex.targetSets} x ${ex.targetReps}</small>
+      <small>Cel: ${ex.targetSets} serie x ${ex.targetReps} powt.</small>
       
       <div class="logged-sets-list">${setsHTML}</div>
       
       <form class="log-set-form" data-ex-index="${exIndex}">
-        <input type="number" class="log-weight" placeholder="kg" required>
-        <input type="number" class="log-reps" placeholder="powt." required>
+        <input type="number" class="log-weight" placeholder="Ciężar (kg)" value="${ex.loggedSets.slice(-1)[0]?.weight || ''}" required>
+        <input type="number" class="log-reps" placeholder="Powtórzenia" required>
         <button type="submit" class="btn-success">Zapisz Serię</button>
       </form>
       
       <div class="rest-timer-section">
         <span class="rest-timer-display" id="rest-timer-${exIndex}">00:00</span>
-        <button class="start-rest-btn" data-ex-index="${exIndex}">60s</button>
-        <button class="start-rest-btn" data-ex-index="${exIndex}">90s</button>
+        <button class="start-rest-btn btn-secondary" data-ex-index="${exIndex}" data-seconds="60">60s</button>
+        <button class="start-rest-btn btn-secondary" data-ex-index="${exIndex}" data-seconds="90">90s</button>
       </div>
     `;
     list.appendChild(card);
   });
 
-  // Dodanie event listenerów do formularzy i timerów
+  // Ustawienie event listenerów
   list.querySelectorAll('.log-set-form').forEach(form => {
     form.onsubmit = (e) => {
       e.preventDefault();
       const exIndex = e.target.dataset.exIndex;
       const weight = e.target.querySelector('.log-weight').value;
       const reps = e.target.querySelector('.log-reps').value;
-      if (weight && reps) {
+      if (weight && reps && +weight >= 0 && +reps >= 1) {
         logSet(exIndex, +weight, +reps);
-        // Wyczyść inputy
-        e.target.querySelector('.log-weight').value = '';
-        e.target.querySelector('.log-reps').value = '';
+        e.target.querySelector('.log-reps').value = ''; // Wyczyść tylko powtórzenia
+        // Opcjonalnie: Uruchom timer odpoczynku po zapisaniu serii
+        startRestTimer(exIndex, 60); 
+      } else {
+        alert('Podaj poprawne wartości dla ciężaru (min. 0) i powtórzeń (min. 1).');
       }
     };
   });
@@ -274,15 +292,13 @@ function renderActiveWorkout() {
   list.querySelectorAll('.start-rest-btn').forEach(btn => {
     btn.onclick = () => {
       const exIndex = btn.dataset.exIndex;
-      const seconds = parseInt(btn.textContent); // 60 lub 90
+      const seconds = +btn.dataset.seconds;
       startRestTimer(exIndex, seconds);
     };
   });
 
   list.querySelectorAll('.set-remove').forEach(btn => {
-    btn.onclick = () => {
-      removeSet(btn.dataset.exIndex, btn.dataset.setIndex);
-    };
+    btn.onclick = () => removeSet(+btn.dataset.exIndex, +btn.dataset.setIndex);
   });
 }
 
@@ -293,7 +309,7 @@ function logSet(exIndex, weight, reps) {
   renderActiveWorkout(); // Odśwież widok
 }
 
-// 3a. Usuwanie Serii (dodatkowe)
+// 3a. Usuwanie Serii
 function removeSet(exIndex, setIndex) {
   if (confirm('Usunąć tę serię?')) {
     state.activeWorkout.exercises[exIndex].loggedSets.splice(setIndex, 1);
@@ -304,21 +320,25 @@ function removeSet(exIndex, setIndex) {
 
 // 4. Timer Odpoczynku (REQ 5)
 function startRestTimer(exIndex, seconds) {
-  // Zatrzymaj poprzedni timer, jeśli działał
+  // Wyczyść ewentualny działający timer
   if (state.restTimer.interval) {
     clearInterval(state.restTimer.interval);
     if (state.restTimer.displayElement) {
-      state.restTimer.displayElement.textContent = '00:00';
+       // Opcjonalnie przywróć poprzedniemu wyświetlaczowi standardowy kolor, jeśli to możliwe
+       state.restTimer.displayElement.style.color = 'var(--accent)';
     }
   }
 
-  state.restTimer.displayElement = document.getElementById(`rest-timer-${exIndex}`);
+  // Ustaw nowy timer
+  const displayElement = document.getElementById(`rest-timer-${exIndex}`);
+  state.restTimer.displayElement = displayElement;
   state.restTimer.secondsLeft = seconds;
+  displayElement.style.color = 'var(--danger)'; // Zmień kolor na czerwony podczas odliczania
 
   const updateDisplay = () => {
     const mins = Math.floor(state.restTimer.secondsLeft / 60).toString().padStart(2, '0');
     const secs = (state.restTimer.secondsLeft % 60).toString().padStart(2, '0');
-    state.restTimer.displayElement.textContent = `${mins}:${secs}`;
+    displayElement.textContent = `${mins}:${secs}`;
   };
   updateDisplay();
 
@@ -329,8 +349,9 @@ function startRestTimer(exIndex, seconds) {
     if (state.restTimer.secondsLeft <= 0) {
       clearInterval(state.restTimer.interval);
       state.restTimer.interval = null;
-      state.restTimer.displayElement.textContent = "Start!";
-      alert("Przerwa zakończona!");
+      displayElement.textContent = "Start!";
+      displayElement.style.color = 'var(--success)';
+      // alert("Przerwa zakończona!"); // Opcjonalny alert
     }
   }, 1000);
 }
@@ -351,63 +372,67 @@ function updateMasterTimer() {
 document.getElementById('finishWorkoutBtn').onclick = () => {
   if (!confirm('Zakończyć i zapisać ten trening?')) return;
 
-  // Zatrzymaj timer
+  // 1. Zakończenie timerów
   clearInterval(state.activeWorkout.totalTimerInterval);
+  if (state.restTimer.interval) clearInterval(state.restTimer.interval);
+  
   const finalDuration = masterTimerDisplay.textContent;
   masterTimerDisplay.style.display = 'none';
 
-  // Utwórz wpis w logu
+  // 2. Utwórz wpis w logu
   const logEntry = {
     date: new Date().toISOString().split('T')[0],
     dayName: state.activeWorkout.dayName,
     duration: finalDuration,
-    exercises: state.activeWorkout.exercises.filter(ex => ex.loggedSets.length > 0) // Zapisz tylko te ćwiczenia, które miały serie
+    exercises: state.activeWorkout.exercises.filter(ex => ex.loggedSets.length > 0) // Tylko ćwiczenia z seriami
   };
   state.logs.push(logEntry);
 
-  // Zresetuj stan aktywnego treningu
-  state.activeWorkout = {
-    isActive: false,
-    dayName: null,
-    startTime: null,
-    totalTimerInterval: null,
-    exercises: []
-  };
+  // 3. Zresetuj stan aktywnego treningu
+  state.activeWorkout = defaultState.activeWorkout; // Użyj czystego obiektu
+  state.restTimer = defaultState.restTimer;
 
   saveState();
-  renderLogs(); // Zaktualizuj historię
-  showPanel('panel-main'); // Wróć do ekranu głównego
+  renderLogs();
+  renderDayList(); // Aktualizuj, bo to może zająć miejsce na głównej liście
+  showPanel('panel-main');
 };
 
 // --- Historia i Logi ---
 function renderLogs() {
   logArea.innerHTML = '';
+  if (state.logs.length === 0) {
+     logArea.innerHTML = '<p style="color:var(--muted)">Brak zapisanych treningów w historii.</p>';
+     return;
+  }
+  
   state.logs.slice().reverse().forEach(log => {
     const div = document.createElement('div');
     div.className = 'card';
     
-    // Podsumowanie ćwiczeń
     const exercisesSummary = log.exercises.map(ex => 
-      `<li>${ex.name}: ${ex.loggedSets.length} serii</li>`
+      // Oblicz sumę serii dla każdego ćwiczenia w logu
+      `<li style="margin-left: -20px;">${ex.name}: <strong>${ex.loggedSets.length}</strong> serii</li>`
     ).join('');
 
     div.innerHTML = `
       <div class="log-summary">
-        ${log.date} - ${log.dayName} (Czas: ${log.duration})
+        ${log.date} - ${log.dayName}
       </div>
-      <div class="log-details">
-        <ul>${exercisesSummary}</ul>
+      <div class="log-details" style="font-size:0.9em; margin-top: 5px;">
+        Czas: ${log.duration}<br>
+        <ul style="list-style-type: disc;">${exercisesSummary}</ul>
       </div>
     `;
     logArea.appendChild(div);
   });
 }
 
-// Funkcje Import/Eksport/Wyczyść (bez zmian)
+// --- Import/Eksport (zaktualizowany do v3) ---
 document.getElementById('exportBtn').onclick = () => {
   const blob = new Blob([JSON.stringify(state.logs)], { type: 'application/json' });
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-  a.download = 'trening_logs_v2.json'; a.click();
+  a.download = 'trening_logs_v3.json'; a.click();
 }
 document.getElementById('importBtn').onclick = () => document.getElementById('fileInput').click();
 document.getElementById('fileInput').onchange = e => {
@@ -417,7 +442,7 @@ document.getElementById('fileInput').onchange = e => {
     try {
       const importedLogs = JSON.parse(reader.result);
       if (Array.isArray(importedLogs)) {
-        state.logs = importedLogs; saveState(); renderLogs(); alert('Zaimportowano dane');
+        state.logs = importedLogs; saveState(); renderLogs(); alert('Zaimportowano dane.');
       } else { alert('Nieprawidłowy format pliku JSON.'); }
     } catch (err) { alert('Błąd podczas odczytu pliku: ' + err.message); }
   }
@@ -425,7 +450,7 @@ document.getElementById('fileInput').onchange = e => {
 }
 document.getElementById('clearHistory').onclick = () => {
   if (confirm('Wyczyścić całą historię treningów?')) {
-    state.logs = []; saveState(); renderLogs();
+    state.logs = []; saveState(); renderLogs(); updateStatsChart();
   }
 }
 
@@ -439,16 +464,13 @@ function initStatsChart() {
   });
 }
 
-// Zaktualizowana funkcja do obliczania objętości z nowej struktury logów
 function updateStatsChart() {
-  if (!statsChart) return;
+  if (!statsChart || !state.logs) return;
 
   const volumeByDate = state.logs.reduce((acc, log) => {
     const date = log.date;
     
-    // Oblicz całkowitą objętość dla danej sesji (logu)
     const totalVolume = log.exercises.reduce((exAcc, ex) => {
-      // Zsumuj objętość dla każdej serii w ćwiczeniu
       const exerciseVolume = ex.loggedSets.reduce((setAcc, set) => {
         return setAcc + (set.weight * set.reps);
       }, 0);
@@ -468,29 +490,24 @@ function updateStatsChart() {
   statsChart.update();
 }
 
-// --- Zapis stanu ---
-function saveState() {
-  localStorage.setItem('trening_pro_v2', JSON.stringify(state));
-}
-
 // --- Funkcja startowa ---
 function initApp() {
   // Sprawdź, czy trening jest w toku (np. po odświeżeniu strony)
   if (state.activeWorkout.isActive) {
     if (confirm("Wykryto niezakończony trening. Chcesz go wznowić?")) {
-      // Wznów timery i pokaż panel
+      // Ponownie przypisz interwał
       state.activeWorkout.totalTimerInterval = setInterval(updateMasterTimer, 1000);
       masterTimerDisplay.style.display = 'block';
       renderActiveWorkout();
       showPanel('panel-active-workout');
     } else {
-      // Anuluj trening
-      state.activeWorkout.isActive = false;
+      // Anuluj trening (reset do stanu początkowego)
+      state.activeWorkout = defaultState.activeWorkout;
+      state.restTimer = defaultState.restTimer;
       saveState();
       showPanel('panel-main');
     }
   } else {
-    // Normalny start
     showPanel('panel-main');
   }
 

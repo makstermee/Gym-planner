@@ -12,12 +12,11 @@
   --secondary: #607d8b;
   --secondary-hover: #546e7a;
   --card-light: #e0f7fa;
-  --card-dark: #2c2c2c;
 }
 
 body {
   margin: 0; font-family: 'Segoe UI', sans-serif; background: var(--bg); color: var(--text);
-  display: flex; flex-direction: column; height: 100vh;
+  display: flex; flex-direction: column; min-height: 100vh; /* Zapewnia pełną wysokość */
 }
 
 /* --- Nagłówek i Timer --- */
@@ -27,31 +26,26 @@ body {
   font-weight: bold; box-shadow: 0 2px 5px rgba(0,0,0,0.2);
   position: sticky; top: 0; z-index: 10;
 }
-#welcomeMsg {
-  font-size: 1rem; font-weight: normal; margin-left: 10px; opacity: 0.8;
-}
+#welcomeMsg { font-size: 1rem; font-weight: normal; margin-left: 5px; opacity: 0.8; }
 .master-timer {
-  display: none; /* Ukryty domyślnie */
-  font-size: 1.1em;
-  background: rgba(0,0,0,0.2);
-  padding: 4px 8px;
-  border-radius: 8px;
-  margin-top: 8px;
+  display: none; font-size: 1.2em; font-weight: bold;
+  background: rgba(0,0,0,0.2); padding: 5px 10px; border-radius: 5px; margin-top: 8px;
 }
 
 /* --- Kontener i Panele --- */
 .container {
-  flex: 1; overflow-y: auto; padding: 12px; max-width: 480px; margin: auto; width: 100%;
+  flex: 1; overflow-y: auto; padding: 16px; max-width: 500px; margin: auto; width: 100%;
 }
-.panel { display: none; animation: fadeIn 0.3s ease-in-out; }
+.panel { display: none; padding-bottom: 70px; /* Miejsce na dolne menu */ animation: fadeIn 0.3s ease-in-out; }
 .panel.active { display: block; }
-@keyframes fadeIn { from {opacity:0; transform:translateY(-10px);} to {opacity:1; transform:translateY(0);} }
+@keyframes fadeIn { from {opacity:0;} to {opacity:1;} }
 
 /* --- Elementy formularzy i przyciski --- */
-.input-row { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
-.button-row { display: flex; gap: 6px; margin-top: 16px; }
-input, select { flex: 1; padding: 10px; border-radius: 8px; border: 1px solid #ccc; min-width: 60px; }
-button { flex: 1; padding: 10px; border: none; border-radius: 8px; background: var(--accent); color: #fff; cursor: pointer; transition: 0.2s; font-weight: bold; }
+.input-row { display: flex; gap: 8px; margin-bottom: 15px; flex-wrap: wrap; }
+.button-row { display: flex; gap: 8px; margin-top: 20px; }
+.action-row button { min-width: 100px; }
+input, select { flex: 1; padding: 12px; border-radius: 8px; border: 1px solid #ccc; min-width: 60px; }
+button { padding: 12px; border: none; border-radius: 8px; background: var(--accent); color: #fff; cursor: pointer; transition: 0.2s; font-weight: bold; font-size: 1em;}
 button:hover { background: var(--accent-hover); }
 
 button.btn-success { background: var(--success); }
@@ -60,76 +54,78 @@ button.btn-danger { background: var(--danger); }
 button.btn-danger:hover { background: var(--danger-hover); }
 button.btn-secondary { background: var(--secondary); }
 button.btn-secondary:hover { background: var(--secondary-hover); }
-button.btn-delete { background: none; color: var(--danger); font-size: 0.9em; flex: 0.3; }
+button.btn-delete { background: var(--danger); color: #fff; font-size: 0.9em; flex: 0 1 80px; }
 
 /* --- Panel Główny (Lista Dni) --- */
-.day-list { display: flex; flex-direction: column; gap: 10px; }
+.day-list { display: flex; flex-direction: column; gap: 12px; }
 .day-btn {
-  padding: 20px; text-align: left; font-size: 1.2em;
+  padding: 18px; text-align: left; font-size: 1.1em;
   background: var(--card); border: 1px solid #ddd;
-  border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-  cursor: pointer; transition: transform 0.2s, box-shadow 0.2s;
+  border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.08);
+  cursor: pointer; transition: 0.2s;
 }
-.day-btn:hover { transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
 
 /* --- Lista ćwiczeń (Podgląd i Edycja) --- */
 .exercise-list .card, .log-area .card {
-  background: var(--card-light); border-radius: 10px; margin-bottom: 6px;
-  padding: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+  background: var(--card-light); border-radius: 10px; margin-bottom: 10px;
+  padding: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);
   display: flex; justify-content: space-between; align-items: center;
 }
-.exercise-list .card strong { font-size: 1.1em; }
-.log-area .card { flex-direction: column; align-items: flex-start; gap: 5px; }
-.log-summary { font-size: 1.1em; font-weight: bold; }
-.log-details { font-size: 0.9em; color: var(--muted); }
+.exercise-list .card span { font-size: 0.9em; color: var(--muted); }
+.log-area .card { flex-direction: column; align-items: flex-start; gap: 8px; }
+
+/* --- Panel Edycji Planu --- */
+.edit-form input { flex: 1; min-width: 0; }
+.edit-form button { flex: 0 1 80px; }
+#exTargetSets, #exTargetReps { flex: 0 1 50px; }
 
 /* --- Panel Aktywnego Treningu --- */
 .workout-card {
-  background: var(--card);
-  border: 1px solid #ddd;
-  border-radius: 8px;
-  margin-bottom: 16px;
-  padding: 12px;
-  box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+  background: var(--card); border: 1px solid #ddd; border-radius: 10px;
+  margin-bottom: 16px; padding: 15px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);
 }
-.workout-card h3 { margin: 0 0 10px 0; }
-.log-set-form { display: flex; gap: 8px; margin-bottom: 12px; }
-.log-set-form input { flex: 1; }
-.log-set-form button { flex: 0.8; }
+.workout-card h3 { margin: 0 0 10px 0; border-bottom: 1px solid #eee; padding-bottom: 5px; }
+.log-set-form { display: flex; gap: 5px; margin-top: 10px; }
+.log-set-form input { flex: 1; padding: 8px; font-size: 0.9em; }
+.log-set-form button { flex: 0 1 100px; padding: 8px; }
 
-.logged-sets-list { font-size: 0.95em; }
+.logged-sets-list { margin-bottom: 10px; }
 .logged-sets-list div {
-  padding: 4px; border-bottom: 1px solid #eee;
-  display: flex; justify-content: space-between;
+  padding: 5px 0; border-bottom: 1px solid #f0f0f0;
+  display: flex; justify-content: space-between; align-items: center;
 }
-.logged-sets-list div:last-child { border: none; }
-.logged-sets-list .set-number { font-weight: bold; color: var(--accent); }
-.logged-sets-list .set-data { color: var(--text); }
-.logged-sets-list .set-remove { color: var(--danger); cursor: pointer; font-weight: bold; }
+.logged-sets-list div:last-child { border-bottom: none; }
+.logged-sets-list .set-number { font-weight: bold; color: var(--accent); font-size: 0.9em; }
+.logged-sets-list .set-remove { color: var(--danger); cursor: pointer; font-size: 0.8em; }
 
 .rest-timer-section {
-  display: flex; gap: 10px; align-items: center; margin-top: 12px;
+  display: flex; justify-content: space-between; align-items: center; margin-top: 15px;
+  padding-top: 10px; border-top: 1px solid #eee;
 }
-.rest-timer-display {
-  font-size: 1.5em; font-weight: bold; color: var(--accent);
-}
+.rest-timer-display { font-size: 1.4em; font-weight: bold; color: var(--accent); }
+.rest-timer-section button { flex: 0 1 60px; padding: 6px; font-size: 0.9em; }
 
 /* --- Dolne Menu --- */
 .bottom-nav {
   display: flex; justify-content: space-around; background: #fff; border-top: 1px solid #ccc;
-  position: sticky; bottom: 0; padding: 8px 0; z-index: 10;
+  position: fixed; /* Zmienione na fixed dla mobilności */
+  bottom: 0; width: 100%; max-width: 500px; left: 50%; transform: translateX(-50%);
+  padding: 10px 0; box-shadow: 0 -2px 5px rgba(0,0,0,0.1); z-index: 20;
 }
-.bottom-nav button { flex: 1; font-size: 16px; background: none; border: none; }
+.bottom-nav button { flex: 1; font-size: 14px; background: none; border: none; color: var(--muted); padding: 5px; }
+.bottom-nav button:hover { background: #f0f0f0; }
 
 /* --- Tryb Ciemny --- */
 body.dark {
   --bg: #1e1e1e; --card: #2c2c2c; --text: #eee; --muted: #aaa;
-  --card-light: #2c2c2c; --card-dark: #3a3a3a;
+  --card-light: #3a3a3a;
 }
 body.dark input, body.dark select {
   background: #3c3c3c; color: #eee; border: 1px solid #555;
 }
-body.dark .bottom-nav { background: #222; color: #eee; border-top-color: #444; }
-body.dark .day-btn { background: var(--card); border-color: #444; }
+body.dark .top { background: linear-gradient(90deg, #d35400, #ff5722); }
+body.dark .bottom-nav { background: #222; border-top-color: #444; }
+body.dark .day-btn, body.dark .workout-card { background: var(--card); border-color: #444; }
 body.dark .logged-sets-list div { border-bottom-color: #444; }
-body.dark .log-details { color: #888; }
+body.dark .workout-card h3 { border-bottom-color: #444; }
+body.dark .rest-timer-section { border-top-color: #444; }

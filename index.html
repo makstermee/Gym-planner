@@ -3,36 +3,36 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Plan Treningowy SPA 💪</title>
+<title>Trening Pro 💪</title>
 <link rel="stylesheet" href="style.css">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
 
 <header class="top">
-  <h1>Plan Treningowy</h1>
+  <h1>Trening Pro</h1>
 </header>
 
 <main class="container">
 
-  <!-- Sekcja: Plan Treningowy -->
-  <section id="section-plan" class="panel active">
-    <h2>Plan Treningowy</h2>
-    <input id="exerciseName" placeholder="Nazwa ćwiczenia" />
-    <div class="row">
+  <!-- Panel: Plan treningowy -->
+  <section id="panel-plan" class="panel active">
+    <h2>Plan treningowy 🏋️‍♂️</h2>
+    <div class="input-row">
+      <input id="exerciseName" placeholder="Nazwa ćwiczenia" />
       <input id="sets" type="number" min="1" value="3" />
       <input id="reps" type="number" min="1" value="10" />
       <input id="weight" type="number" min="0" value="50" />
+      <button id="addExercise">Dodaj</button>
     </div>
-    <button id="addExercise">Dodaj ćwiczenie</button>
     <div id="exerciseList" class="exercise-list"></div>
   </section>
 
-  <!-- Sekcja: Timer -->
-  <section id="section-timer" class="panel">
-    <h2>Timer między seriami ⏱️</h2>
+  <!-- Panel: Timer -->
+  <section id="panel-timer" class="panel">
+    <h2>Timer ⏱️</h2>
     <div id="timerDisplay">00:00</div>
-    <div class="row">
+    <div class="input-row">
       <input id="restSeconds" type="number" min="5" value="60" /> sek.
       <button id="startRest">Start</button>
       <button id="stopRest">Stop</button>
@@ -40,21 +40,27 @@
     </div>
   </section>
 
-  <!-- Sekcja: Historia i Progres -->
-  <section id="section-history" class="panel">
-    <h2>Historia i Progres 📈</h2>
+  <!-- Panel: Historia -->
+  <section id="panel-history" class="panel">
+    <h2>Historia i logi 📜</h2>
     <div id="logArea" class="log-area"></div>
     <canvas id="progressChart" height="150"></canvas>
-    <div class="row">
-      <button id="clearHistory">Wyczyść historię</button>
+    <div class="input-row">
+      <button id="clearHistory">Wyczyść</button>
       <button id="exportBtn">Eksport JSON</button>
       <button id="importBtn">Import JSON</button>
       <input type="file" id="fileInput" style="display:none" accept=".json">
     </div>
   </section>
 
-  <!-- Sekcja: Ustawienia -->
-  <section id="section-settings" class="panel">
+  <!-- Panel: Statystyki -->
+  <section id="panel-stats" class="panel">
+    <h2>Statystyki 📈</h2>
+    <canvas id="statsChart" height="200"></canvas>
+  </section>
+
+  <!-- Panel: Ustawienia -->
+  <section id="panel-settings" class="panel">
     <h2>Ustawienia ⚙️</h2>
     <label>Twoje imię:</label>
     <input id="username" placeholder="Imię..." />
@@ -68,12 +74,13 @@
 
 </main>
 
-<!-- Dolne Menu -->
+<!-- Dolne menu -->
 <nav class="bottom-nav">
-  <button data-section="section-plan">🏋️‍♂️ Plan</button>
-  <button data-section="section-history">📜 Historia</button>
-  <button data-section="section-timer">⏱️ Timer</button>
-  <button data-section="section-settings">⚙️ Ustawienia</button>
+  <button data-panel="panel-plan">🏋️‍♂️ Plan</button>
+  <button data-panel="panel-history">📜 Historia</button>
+  <button data-panel="panel-timer">⏱️ Timer</button>
+  <button data-panel="panel-stats">📈 Statystyki</button>
+  <button data-panel="panel-settings">⚙️ Ustawienia</button>
 </nav>
 
 <script src="app.js"></script>

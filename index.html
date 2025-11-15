@@ -10,12 +10,11 @@
 <body>
 
 <header class="top">
-  <h1>Trening Pro</h1>
+  <h1>Trening Pro <span id="welcomeMsg"></span></h1>
 </header>
 
 <main class="container">
 
-  <!-- Panel: Plan treningowy -->
   <section id="panel-plan" class="panel active">
     <h2>Plan treningowy 🏋️‍♂️</h2>
     <div class="input-row">
@@ -28,23 +27,20 @@
     <div id="exerciseList" class="exercise-list"></div>
   </section>
 
-  <!-- Panel: Timer -->
   <section id="panel-timer" class="panel">
     <h2>Timer ⏱️</h2>
     <div id="timerDisplay">00:00</div>
     <div class="input-row">
-      <input id="restSeconds" type="number" min="5" value="60" /> sek.
+      <input id="restSeconds" type="number" min="5" value="60" /> <span>sek.</span>
       <button id="startRest">Start</button>
       <button id="stopRest">Stop</button>
       <button id="resetRest">Reset</button>
     </div>
   </section>
 
-  <!-- Panel: Historia -->
   <section id="panel-history" class="panel">
     <h2>Historia i logi 📜</h2>
     <div id="logArea" class="log-area"></div>
-    <canvas id="progressChart" height="150"></canvas>
     <div class="input-row">
       <button id="clearHistory">Wyczyść</button>
       <button id="exportBtn">Eksport JSON</button>
@@ -53,13 +49,11 @@
     </div>
   </section>
 
-  <!-- Panel: Statystyki -->
   <section id="panel-stats" class="panel">
     <h2>Statystyki 📈</h2>
     <canvas id="statsChart" height="200"></canvas>
   </section>
 
-  <!-- Panel: Ustawienia -->
   <section id="panel-settings" class="panel">
     <h2>Ustawienia ⚙️</h2>
     <label>Twoje imię:</label>
@@ -74,7 +68,6 @@
 
 </main>
 
-<!-- Dolne menu -->
 <nav class="bottom-nav">
   <button data-panel="panel-plan">🏋️‍♂️ Plan</button>
   <button data-panel="panel-history">📜 Historia</button>

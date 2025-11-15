@@ -1,135 +1,504 @@
-:root {
-  --bg: #f0f4f8;
-  --card: #fff;
-  --accent: #ff5722;
-  --accent-hover: #e64a19;
-  --text: #111;
-  --muted: #666;
-  --success: #4CAF50;
-  --success-hover: #45a049;
-  --danger: #f44336;
-  --danger-hover: #d32f2f;
-  --secondary: #607d8b;
-  --secondary-hover: #546e7a;
-  --card-light: #e0f7fa;
-  --card-dark: #2c2c2c;
+// --- Inicjalizacja stanu ---
+// ZUPEŁNIE NOWA STRUKTURA STANU
+let state = JSON.parse(localStorage.getItem('trening_pro_v2') || `{
+  "username": "",
+  "theme": "light",
+  "plans": {
+    "Poniedziałek": [],
+    "Wtorek": [],
+    "Środa": [],
+    "Czwartek": [],
+    "Piątek": [],
+    "Sobota": [],
+    "Niedziela": []
+  },
+  "logs": [],
+  "activeWorkout": {
+    "isActive": false,
+    "dayName": null,
+    "startTime": null,
+    "totalTimerInterval": null,
+    "exercises": []
+  },
+  "restTimer": {
+    "interval": null,
+    "displayElement": null,
+    "secondsLeft": 0
+  }
+}`);
+
+// --- Zmienne globalne ---
+const panels = document.querySelectorAll('.panel');
+const welcomeMsg = document.getElementById('welcomeMsg');
+const dayList = document.getElementById('dayList');
+const logArea = document.getElementById('logArea');
+const masterTimerDisplay = document.getElementById('masterTimerDisplay');
+let statsChart = null; // Zmienna dla wykresu
+let currentDay = null; // Przechowuje dzień wybrany do edycji/treningu
+
+// --- Główny System Nawigacji ---
+
+// Pokaż panel i ukryj resztę
+function showPanel(panelId) {
+  // Jeśli trening jest aktywny, nie pozwól na nawigację poza panel treningu
+  if (state.activeWorkout.isActive && panelId !== 'panel-active-workout') {
+    alert("Najpierw zakończ aktywny trening!");
+    return;
+  }
+  panels.forEach(p => p.classList.remove('active'));
+  document.getElementById(panelId).classList.add('active');
+
+  // Specjalna logika dla panelu statystyk (inicjalizacja/aktualizacja)
+  if (panelId === 'panel-stats') {
+    if (!statsChart) {
+      initStatsChart();
+    }
+    updateStatsChart();
+  }
 }
 
-body {
-  margin: 0; font-family: 'Segoe UI', sans-serif; background: var(--bg); color: var(--text);
-  display: flex; flex-direction: column; height: 100vh;
+// Dolne menu nawigacyjne
+document.querySelectorAll('.bottom-nav button').forEach(btn => {
+  btn.onclick = () => {
+    showPanel(btn.dataset.panel);
+  }
+});
+
+// Przyciski "Wróć"
+document.getElementById('backToMainBtn').onclick = () => showPanel('panel-main');
+document.getElementById('savePlanChangesBtn').onclick = () => {
+  saveState(); // Zapisz zmiany w planie
+  showPlanDetails(currentDay); // Wróć do podglądu planu
+};
+
+// --- Ustawienia i Motyw (bez zmian) ---
+const usernameInput = document.getElementById('username');
+usernameInput.value = state.username;
+usernameInput.onchange = e => { state.username = e.target.value; saveState(); updateWelcome(); }
+function updateWelcome() {
+  welcomeMsg.textContent = state.username ? `, ${state.username}!` : '';
 }
 
-/* --- Nagłówek i Timer --- */
-.top {
-  padding: 16px; text-align: center;
-  background: linear-gradient(90deg, #ff8a65, #ff5722); color: #fff;
-  font-weight: bold; box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-  position: sticky; top: 0; z-index: 10;
-}
-#welcomeMsg {
-  font-size: 1rem; font-weight: normal; margin-left: 10px; opacity: 0.8;
-}
-.master-timer {
-  display: none; /* Ukryty domyślnie */
-  font-size: 1.1em;
-  background: rgba(0,0,0,0.2);
-  padding: 4px 8px;
-  border-radius: 8px;
-  margin-top: 8px;
+const themeSelect = document.getElementById('themeSelect');
+themeSelect.value = state.theme;
+applyTheme();
+themeSelect.onchange = e => { state.theme = e.target.value; applyTheme(); saveState(); }
+function applyTheme() { document.body.classList.toggle('dark', state.theme === 'dark'); }
+
+document.getElementById('resetData').onclick = () => {
+  if (confirm('JESTEŚ PEWIEN? Spowoduje to usunięcie WSZYSTKICH planów, historii i ustawień.')) {
+    localStorage.removeItem('trening_pro_v2');
+    location.reload();
+  }
 }
 
-/* --- Kontener i Panele --- */
-.container {
-  flex: 1; overflow-y: auto; padding: 12px; max-width: 480px; margin: auto; width: 100%;
-}
-.panel { display: none; animation: fadeIn 0.3s ease-in-out; }
-.panel.active { display: block; }
-@keyframes fadeIn { from {opacity:0; transform:translateY(-10px);} to {opacity:1; transform:translateY(0);} }
+// --- Logika Planów Treningowych (REQ 1, 2) ---
 
-/* --- Elementy formularzy i przyciski --- */
-.input-row { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
-.button-row { display: flex; gap: 6px; margin-top: 16px; }
-input, select { flex: 1; padding: 10px; border-radius: 8px; border: 1px solid #ccc; min-width: 60px; }
-button { flex: 1; padding: 10px; border: none; border-radius: 8px; background: var(--accent); color: #fff; cursor: pointer; transition: 0.2s; font-weight: bold; }
-button:hover { background: var(--accent-hover); }
-
-button.btn-success { background: var(--success); }
-button.btn-success:hover { background: var(--success-hover); }
-button.btn-danger { background: var(--danger); }
-button.btn-danger:hover { background: var(--danger-hover); }
-button.btn-secondary { background: var(--secondary); }
-button.btn-secondary:hover { background: var(--secondary-hover); }
-button.btn-delete { background: none; color: var(--danger); font-size: 0.9em; flex: 0.3; }
-
-/* --- Panel Główny (Lista Dni) --- */
-.day-list { display: flex; flex-direction: column; gap: 10px; }
-.day-btn {
-  padding: 20px; text-align: left; font-size: 1.2em;
-  background: var(--card); border: 1px solid #ddd;
-  border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-  cursor: pointer; transition: transform 0.2s, box-shadow 0.2s;
-}
-.day-btn:hover { transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
-
-/* --- Lista ćwiczeń (Podgląd i Edycja) --- */
-.exercise-list .card, .log-area .card {
-  background: var(--card-light); border-radius: 10px; margin-bottom: 6px;
-  padding: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-  display: flex; justify-content: space-between; align-items: center;
-}
-.exercise-list .card strong { font-size: 1.1em; }
-.log-area .card { flex-direction: column; align-items: flex-start; gap: 5px; }
-.log-summary { font-size: 1.1em; font-weight: bold; }
-.log-details { font-size: 0.9em; color: var(--muted); }
-
-/* --- Panel Aktywnego Treningu --- */
-.workout-card {
-  background: var(--card);
-  border: 1px solid #ddd;
-  border-radius: 8px;
-  margin-bottom: 16px;
-  padding: 12px;
-  box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-}
-.workout-card h3 { margin: 0 0 10px 0; }
-.log-set-form { display: flex; gap: 8px; margin-bottom: 12px; }
-.log-set-form input { flex: 1; }
-.log-set-form button { flex: 0.8; }
-
-.logged-sets-list { font-size: 0.95em; }
-.logged-sets-list div {
-  padding: 4px; border-bottom: 1px solid #eee;
-  display: flex; justify-content: space-between;
-}
-.logged-sets-list div:last-child { border: none; }
-.logged-sets-list .set-number { font-weight: bold; color: var(--accent); }
-.logged-sets-list .set-data { color: var(--text); }
-.logged-sets-list .set-remove { color: var(--danger); cursor: pointer; font-weight: bold; }
-
-.rest-timer-section {
-  display: flex; gap: 10px; align-items: center; margin-top: 12px;
-}
-.rest-timer-display {
-  font-size: 1.5em; font-weight: bold; color: var(--accent);
+// 1. Renderowanie Głównego Panelu (Lista Dni)
+function renderDayList() {
+  dayList.innerHTML = '';
+  Object.keys(state.plans).forEach(dayName => {
+    const btn = document.createElement('button');
+    btn.className = 'day-btn';
+    btn.textContent = dayName;
+    btn.onclick = () => showPlanDetails(dayName);
+    dayList.appendChild(btn);
+  });
 }
 
-/* --- Dolne Menu --- */
-.bottom-nav {
-  display: flex; justify-content: space-around; background: #fff; border-top: 1px solid #ccc;
-  position: sticky; bottom: 0; padding: 8px 0; z-index: 10;
-}
-.bottom-nav button { flex: 1; font-size: 16px; background: none; border: none; }
+// 2. Pokazywanie Szczegółów Planu (Podgląd)
+function showPlanDetails(dayName) {
+  currentDay = dayName;
+  document.getElementById('planDetailsTitle').textContent = `Plan: ${dayName}`;
+  const list = document.getElementById('planDetailsList');
+  list.innerHTML = '';
 
-/* --- Tryb Ciemny --- */
-body.dark {
-  --bg: #1e1e1e; --card: #2c2c2c; --text: #eee; --muted: #aaa;
-  --card-light: #2c2c2c; --card-dark: #3a3a3a;
+  if (state.plans[dayName].length === 0) {
+    list.innerHTML = '<p>Brak ćwiczeń w planie. Dodaj je w edytorze.</p>';
+  }
+
+  state.plans[dayName].forEach(ex => {
+    const div = document.createElement('div');
+    div.className = 'card';
+    div.innerHTML = `
+      <div>
+        <strong>${ex.name}</strong><br>
+        <span>Cel: ${ex.targetSets} serie x ${ex.targetReps} powt.</span>
+      </div>
+    `;
+    list.appendChild(div);
+  });
+
+  // Ustawienie przycisków
+  document.getElementById('editPlanBtn').onclick = () => showPlanEditor(dayName);
+  document.getElementById('startWorkoutBtn').onclick = () => startWorkout(dayName);
+
+  showPanel('panel-plan-details');
 }
-body.dark input, body.dark select {
-  background: #3c3c3c; color: #eee; border: 1px solid #555;
+
+// 3. Pokazywanie Edytora Planu
+function showPlanEditor(dayName) {
+  currentDay = dayName;
+  document.getElementById('editPlanTitle').textContent = `Edytuj: ${dayName}`;
+  renderEditPlanList();
+  
+  // Logika dodawania ćwiczenia
+  document.getElementById('addExerciseBtn').onclick = () => {
+    const name = document.getElementById('exName').value;
+    const sets = +document.getElementById('exTargetSets').value;
+    const reps = +document.getElementById('exTargetReps').value;
+
+    if (!name || !sets || !reps) {
+      alert('Wypełnij wszystkie pola ćwiczenia!');
+      return;
+    }
+
+    state.plans[dayName].push({ name: name, targetSets: sets, targetReps: reps });
+    saveState();
+    renderEditPlanList(); // Odśwież listę
+    // Wyczyść formularz
+    document.getElementById('exName').value = '';
+    document.getElementById('exTargetSets').value = '';
+    document.getElementById('exTargetReps').value = '';
+  };
+
+  showPanel('panel-edit-plan');
 }
-body.dark .bottom-nav { background: #222; color: #eee; border-top-color: #444; }
-body.dark .day-btn { background: var(--card); border-color: #444; }
-body.dark .logged-sets-list div { border-bottom-color: #444; }
-body.dark .log-details { color: #888; }
+
+// 3a. Renderowanie listy w edytorze (z przyciskami 'Usuń')
+function renderEditPlanList() {
+  const list = document.getElementById('editPlanList');
+  list.innerHTML = '';
+  state.plans[currentDay].forEach((ex, index) => {
+    const div = document.createElement('div');
+    div.className = 'card';
+    div.innerHTML = `
+      <div>
+        <strong>${ex.name}</strong><br>
+        <span>Cel: ${ex.targetSets} x ${ex.targetReps}</span>
+      </div>
+      <button class="btn-delete" data-index="${index}">Usuń</button>
+    `;
+    div.querySelector('.btn-delete').onclick = () => {
+      if (confirm(`Usunąć "${ex.name}" z planu?`)) {
+        state.plans[currentDay].splice(index, 1);
+        saveState();
+        renderEditPlanList(); // Odśwież
+      }
+    };
+    list.appendChild(div);
+  });
+}
+
+// --- Logika Aktywnego Treningu (REQ 3, 4, 5) ---
+
+// 1. Start Treningu
+function startWorkout(dayName) {
+  if (!confirm(`Rozpocząć trening: ${dayName}?`)) return;
+
+  state.activeWorkout = {
+    isActive: true,
+    dayName: dayName,
+    startTime: Date.now(),
+    totalTimerInterval: setInterval(updateMasterTimer, 1000),
+    // GŁĘBOKA KOPIA planu, aby dodać logi serii
+    exercises: state.plans[dayName].map(ex => ({
+      ...ex, // Kopiuje name, targetSets, targetReps
+      loggedSets: [] // Dodaje nowe pole na wykonane serie
+    }))
+  };
+
+  masterTimerDisplay.style.display = 'block';
+  updateMasterTimer();
+  renderActiveWorkout();
+  showPanel('panel-active-workout');
+  saveState();
+}
+
+// 2. Renderowanie Panelu Aktywnego Treningu
+function renderActiveWorkout() {
+  document.getElementById('activeWorkoutTitle').textContent = `Trening: ${state.activeWorkout.dayName}`;
+  const list = document.getElementById('activeWorkoutList');
+  list.innerHTML = '';
+
+  state.activeWorkout.exercises.forEach((ex, exIndex) => {
+    const card = document.createElement('div');
+    card.className = 'workout-card';
+
+    // Lista zalogowanych serii
+    let setsHTML = ex.loggedSets.map((set, setIndex) => `
+      <div class="logged-set" data-set-index="${setIndex}">
+        <span class="set-number">Seria ${setIndex + 1}:</span>
+        <span class="set-data">${set.weight} kg x ${set.reps} powt.</span>
+        <span class="set-remove" data-ex-index="${exIndex}" data-set-index="${setIndex}">Usuń</span>
+      </div>
+    `).join('');
+
+    card.innerHTML = `
+      <h3>${ex.name}</h3>
+      <small>Cel: ${ex.targetSets} x ${ex.targetReps}</small>
+      
+      <div class="logged-sets-list">${setsHTML}</div>
+      
+      <form class="log-set-form" data-ex-index="${exIndex}">
+        <input type="number" class="log-weight" placeholder="kg" required>
+        <input type="number" class="log-reps" placeholder="powt." required>
+        <button type="submit" class="btn-success">Zapisz Serię</button>
+      </form>
+      
+      <div class="rest-timer-section">
+        <span class="rest-timer-display" id="rest-timer-${exIndex}">00:00</span>
+        <button class="start-rest-btn" data-ex-index="${exIndex}">60s</button>
+        <button class="start-rest-btn" data-ex-index="${exIndex}">90s</button>
+      </div>
+    `;
+    list.appendChild(card);
+  });
+
+  // Dodanie event listenerów do formularzy i timerów
+  list.querySelectorAll('.log-set-form').forEach(form => {
+    form.onsubmit = (e) => {
+      e.preventDefault();
+      const exIndex = e.target.dataset.exIndex;
+      const weight = e.target.querySelector('.log-weight').value;
+      const reps = e.target.querySelector('.log-reps').value;
+      if (weight && reps) {
+        logSet(exIndex, +weight, +reps);
+        // Wyczyść inputy
+        e.target.querySelector('.log-weight').value = '';
+        e.target.querySelector('.log-reps').value = '';
+      }
+    };
+  });
+
+  list.querySelectorAll('.start-rest-btn').forEach(btn => {
+    btn.onclick = () => {
+      const exIndex = btn.dataset.exIndex;
+      const seconds = parseInt(btn.textContent); // 60 lub 90
+      startRestTimer(exIndex, seconds);
+    };
+  });
+
+  list.querySelectorAll('.set-remove').forEach(btn => {
+    btn.onclick = () => {
+      removeSet(btn.dataset.exIndex, btn.dataset.setIndex);
+    };
+  });
+}
+
+// 3. Logowanie Serii (REQ 4)
+function logSet(exIndex, weight, reps) {
+  state.activeWorkout.exercises[exIndex].loggedSets.push({ weight, reps });
+  saveState();
+  renderActiveWorkout(); // Odśwież widok
+}
+
+// 3a. Usuwanie Serii (dodatkowe)
+function removeSet(exIndex, setIndex) {
+  if (confirm('Usunąć tę serię?')) {
+    state.activeWorkout.exercises[exIndex].loggedSets.splice(setIndex, 1);
+    saveState();
+    renderActiveWorkout();
+  }
+}
+
+// 4. Timer Odpoczynku (REQ 5)
+function startRestTimer(exIndex, seconds) {
+  // Zatrzymaj poprzedni timer, jeśli działał
+  if (state.restTimer.interval) {
+    clearInterval(state.restTimer.interval);
+    if (state.restTimer.displayElement) {
+      state.restTimer.displayElement.textContent = '00:00';
+    }
+  }
+
+  state.restTimer.displayElement = document.getElementById(`rest-timer-${exIndex}`);
+  state.restTimer.secondsLeft = seconds;
+
+  const updateDisplay = () => {
+    const mins = Math.floor(state.restTimer.secondsLeft / 60).toString().padStart(2, '0');
+    const secs = (state.restTimer.secondsLeft % 60).toString().padStart(2, '0');
+    state.restTimer.displayElement.textContent = `${mins}:${secs}`;
+  };
+  updateDisplay();
+
+  state.restTimer.interval = setInterval(() => {
+    state.restTimer.secondsLeft--;
+    updateDisplay();
+
+    if (state.restTimer.secondsLeft <= 0) {
+      clearInterval(state.restTimer.interval);
+      state.restTimer.interval = null;
+      state.restTimer.displayElement.textContent = "Start!";
+      alert("Przerwa zakończona!");
+    }
+  }, 1000);
+}
+
+// 5. Główny Stoper Sesji (REQ 3)
+function updateMasterTimer() {
+  if (!state.activeWorkout.isActive) return;
+  
+  const elapsedMs = Date.now() - state.activeWorkout.startTime;
+  const hours = Math.floor(elapsedMs / 3600000).toString().padStart(2, '0');
+  const minutes = Math.floor((elapsedMs % 3600000) / 60000).toString().padStart(2, '0');
+  const seconds = Math.floor((elapsedMs % 60000) / 1000).toString().padStart(2, '0');
+  
+  masterTimerDisplay.textContent = `${hours}:${minutes}:${seconds}`;
+}
+
+// 6. Zakończenie Treningu
+document.getElementById('finishWorkoutBtn').onclick = () => {
+  if (!confirm('Zakończyć i zapisać ten trening?')) return;
+
+  // Zatrzymaj timer
+  clearInterval(state.activeWorkout.totalTimerInterval);
+  const finalDuration = masterTimerDisplay.textContent;
+  masterTimerDisplay.style.display = 'none';
+
+  // Utwórz wpis w logu
+  const logEntry = {
+    date: new Date().toISOString().split('T')[0],
+    dayName: state.activeWorkout.dayName,
+    duration: finalDuration,
+    exercises: state.activeWorkout.exercises.filter(ex => ex.loggedSets.length > 0) // Zapisz tylko te ćwiczenia, które miały serie
+  };
+  state.logs.push(logEntry);
+
+  // Zresetuj stan aktywnego treningu
+  state.activeWorkout = {
+    isActive: false,
+    dayName: null,
+    startTime: null,
+    totalTimerInterval: null,
+    exercises: []
+  };
+
+  saveState();
+  renderLogs(); // Zaktualizuj historię
+  showPanel('panel-main'); // Wróć do ekranu głównego
+};
+
+// --- Historia i Logi ---
+function renderLogs() {
+  logArea.innerHTML = '';
+  state.logs.slice().reverse().forEach(log => {
+    const div = document.createElement('div');
+    div.className = 'card';
+    
+    // Podsumowanie ćwiczeń
+    const exercisesSummary = log.exercises.map(ex => 
+      `<li>${ex.name}: ${ex.loggedSets.length} serii</li>`
+    ).join('');
+
+    div.innerHTML = `
+      <div class="log-summary">
+        ${log.date} - ${log.dayName} (Czas: ${log.duration})
+      </div>
+      <div class="log-details">
+        <ul>${exercisesSummary}</ul>
+      </div>
+    `;
+    logArea.appendChild(div);
+  });
+}
+
+// Funkcje Import/Eksport/Wyczyść (bez zmian)
+document.getElementById('exportBtn').onclick = () => {
+  const blob = new Blob([JSON.stringify(state.logs)], { type: 'application/json' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+  a.download = 'trening_logs_v2.json'; a.click();
+}
+document.getElementById('importBtn').onclick = () => document.getElementById('fileInput').click();
+document.getElementById('fileInput').onchange = e => {
+  const file = e.target.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const importedLogs = JSON.parse(reader.result);
+      if (Array.isArray(importedLogs)) {
+        state.logs = importedLogs; saveState(); renderLogs(); alert('Zaimportowano dane');
+      } else { alert('Nieprawidłowy format pliku JSON.'); }
+    } catch (err) { alert('Błąd podczas odczytu pliku: ' + err.message); }
+  }
+  reader.readAsText(file);
+}
+document.getElementById('clearHistory').onclick = () => {
+  if (confirm('Wyczyścić całą historię treningów?')) {
+    state.logs = []; saveState(); renderLogs();
+  }
+}
+
+// --- Statystyki (Wykres) ---
+function initStatsChart() {
+  const ctx = document.getElementById('statsChart').getContext('2d');
+  statsChart = new Chart(ctx, {
+    type: 'bar',
+    data: { labels: [], datasets: [{ label: 'Objętość treningowa (kg)', data: [], backgroundColor: '#ff5722' }] },
+    options: { responsive: true, scales: { y: { beginAtZero: true } } }
+  });
+}
+
+// Zaktualizowana funkcja do obliczania objętości z nowej struktury logów
+function updateStatsChart() {
+  if (!statsChart) return;
+
+  const volumeByDate = state.logs.reduce((acc, log) => {
+    const date = log.date;
+    
+    // Oblicz całkowitą objętość dla danej sesji (logu)
+    const totalVolume = log.exercises.reduce((exAcc, ex) => {
+      // Zsumuj objętość dla każdej serii w ćwiczeniu
+      const exerciseVolume = ex.loggedSets.reduce((setAcc, set) => {
+        return setAcc + (set.weight * set.reps);
+      }, 0);
+      return exAcc + exerciseVolume;
+    }, 0);
+
+    if (!acc[date]) {
+      acc[date] = 0;
+    }
+    acc[date] += totalVolume;
+    return acc;
+  }, {});
+
+  const sortedDates = Object.keys(volumeByDate).sort();
+  statsChart.data.labels = sortedDates;
+  statsChart.data.datasets[0].data = sortedDates.map(date => volumeByDate[date]);
+  statsChart.update();
+}
+
+// --- Zapis stanu ---
+function saveState() {
+  localStorage.setItem('trening_pro_v2', JSON.stringify(state));
+}
+
+// --- Funkcja startowa ---
+function initApp() {
+  // Sprawdź, czy trening jest w toku (np. po odświeżeniu strony)
+  if (state.activeWorkout.isActive) {
+    if (confirm("Wykryto niezakończony trening. Chcesz go wznowić?")) {
+      // Wznów timery i pokaż panel
+      state.activeWorkout.totalTimerInterval = setInterval(updateMasterTimer, 1000);
+      masterTimerDisplay.style.display = 'block';
+      renderActiveWorkout();
+      showPanel('panel-active-workout');
+    } else {
+      // Anuluj trening
+      state.activeWorkout.isActive = false;
+      saveState();
+      showPanel('panel-main');
+    }
+  } else {
+    // Normalny start
+    showPanel('panel-main');
+  }
+
+  updateWelcome();
+  applyTheme();
+  renderDayList();
+  renderLogs();
+}
+
+// --- Start Aplikacji ---
+initApp();

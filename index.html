@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Trening Pro v2 🏋️‍♂️</title>
+<title>Trening Pro v3 🏋️‍♂️</title>
 <link rel="stylesheet" href="style.css">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
@@ -35,10 +35,10 @@
 
   <section id="panel-edit-plan" class="panel">
     <h2 id="editPlanTitle">Edytuj: ...</h2>
-    <div class="input-row">
+    <div class="input-row edit-form">
       <input id="exName" placeholder="Nazwa ćwiczenia" />
-      <input id="exTargetSets" type="number" min="1" placeholder="Serie" />
-      <input id="exTargetReps" type="number" min="1" placeholder="Powt." />
+      <input id="exTargetSets" type="number" min="1" placeholder="Serie (cel)" />
+      <input id="exTargetReps" type="number" min="1" placeholder="Powt. (cel)" />
       <button id="addExerciseBtn">Dodaj</button>
     </div>
     <div id="editPlanList" class="exercise-list">
@@ -50,7 +50,7 @@
 
   <section id="panel-active-workout" class="panel">
     <h2 id="activeWorkoutTitle">Trening: ...</h2>
-    <div id="activeWorkoutList">
+    <div id="activeWorkoutList" class="workout-list-container">
       </div>
     <button id="finishWorkoutBtn" class="btn-danger">Zakończ i Zapisz Trening</button>
   </section>
@@ -59,8 +59,8 @@
   <section id="panel-history" class="panel">
     <h2>Historia i logi 📜</h2>
     <div id="logArea" class="log-area"></div>
-    <div class="input-row">
-      <button id="clearHistory">Wyczyść</button>
+    <div class="input-row action-row">
+      <button id="clearHistory" class="btn-secondary">Wyczyść</button>
       <button id="exportBtn">Eksport JSON</button>
       <button id="importBtn">Import JSON</button>
       <input type="file" id="fileInput" style="display:none" accept=".json">
@@ -74,9 +74,9 @@
 
   <section id="panel-settings" class="panel">
     <h2>Ustawienia ⚙️</h2>
-    <label>Twoje imię:</label>
+    <label for="username">Twoje imię:</label>
     <input id="username" placeholder="Imię..." />
-    <label>Motyw:</label>
+    <label for="themeSelect">Motyw:</label>
     <select id="themeSelect">
       <option value="light">Jasny</option>
       <option value="dark">Ciemny</option>

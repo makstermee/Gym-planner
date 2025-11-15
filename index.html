@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Plan Treningowy - Full</title>
+  <link rel="stylesheet" href="style.css" />
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Firebase (optional) - replace config in app.js and uncomment init lines there if you want) -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+</head>
+<body>
+  <header class="top">
+    <h1>Plan Treningowy</h1>
+    <div class="controls">
+      <button id="exportBtn">Eksportuj CSV</button>
+      <button id="importBtn">Importuj (JSON)</button>
+      <input id="fileInput" type="file" accept="application/json" style="display:none" />
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="card">
+      <h2>Ustawienia</h2>
+      <label>Użytkownik (opcjonalne)</label>
+      <input id="username" placeholder="Twoje imię" />
+
+      <label>Wybierz dzień</label>
+      <select id="daySelect"></select>
+      <div class="small">Wszystkie dni są zawsze zapisywane (poniedziałek–niedziela).</div>
+    </section>
+
+    <section class="card">
+      <h2>Dodaj ćwiczenie</h2>
+      <input id="exerciseName" placeholder="np. Wyciskanie na ławce" />
+      <div class="row">
+        <input id="sets" type="number" min="1" value="3" />
+        <input id="reps" type="number" min="1" value="8" />
+        <input id="weight" type="number" min="0" value="60" />
+      </div>
+      <button id="addExercise">Dodaj</button>
+    </section>
+
+    <section class="card">
+      <h2>Plan dnia</h2>
+      <div id="exerciseList"></div>
+    </section>
+
+    <section class="card">
+      <h2>Log serii (Progres)</h2>
+      <div id="logArea"></div>
+      <div class="row">
+        <input id="logSets" type="number" placeholder="Serie" />
+        <input id="logReps" type="number" placeholder="Powtórzenia" />
+        <input id="logWeight" type="number" placeholder="Ciężar (kg)" />
+        <button id="logBtn">Zapisz serię</button>
+      </div>
+      <canvas id="progressChart" height="120"></canvas>
+    </section>
+
+    <section class="card">
+      <h2>Timer między seriami</h2>
+      <div id="timerDisplay">00:00</div>
+      <div class="row">
+        <input id="restSeconds" type="number" min="5" value="60" /> <span class="small">sek.</span>
+        <button id="startRest">Start odpoczynku</button>
+        <button id="stopRest">Stop</button>
+        <button id="resetRest">Reset</button>
+      </div>
+      <div class="small">Możesz użyć timera jako interwałowego - wpisz czas i kliknij Start.</div>
+    </section>
+
+    <section class="card">
+      <h2>Historia</h2>
+      <div id="historyList"></div>
+      <div class="row">
+        <button id="clearHistory">Wyczyść historię</button>
+        <button id="syncFirebase">Zsynchronizuj z Firebase</button>
+      </div>
+    </section>
+  </main>
+
+  <footer class="bottom">Gotowe — edytuj, rozwijaj i wrzuć na GitHub/Render.</footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

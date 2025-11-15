@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Trening Pro 💪</title>
+<title>Trening Pro v2 🏋️‍♂️</title>
 <link rel="stylesheet" href="style.css">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
@@ -11,32 +11,50 @@
 
 <header class="top">
   <h1>Trening Pro <span id="welcomeMsg"></span></h1>
+  <div id="masterTimerDisplay" class="master-timer">00:00:00</div>
 </header>
 
 <main class="container">
 
-  <section id="panel-plan" class="panel active">
-    <h2>Plan treningowy 🏋️‍♂️</h2>
-    <div class="input-row">
-      <input id="exerciseName" placeholder="Nazwa ćwiczenia" />
-      <input id="sets" type="number" min="1" value="3" />
-      <input id="reps" type="number" min="1" value="10" />
-      <input id="weight" type="number" min="0" value="50" />
-      <button id="addExercise">Dodaj</button>
-    </div>
-    <div id="exerciseList" class="exercise-list"></div>
+  <section id="panel-main" class="panel active">
+    <h2>Plany Treningowe</h2>
+    <div id="dayList" class="day-list">
+      </div>
   </section>
 
-  <section id="panel-timer" class="panel">
-    <h2>Timer ⏱️</h2>
-    <div id="timerDisplay">00:00</div>
-    <div class="input-row">
-      <input id="restSeconds" type="number" min="5" value="60" /> <span>sek.</span>
-      <button id="startRest">Start</button>
-      <button id="stopRest">Stop</button>
-      <button id="resetRest">Reset</button>
+  <section id="panel-plan-details" class="panel">
+    <h2 id="planDetailsTitle">Plan: ...</h2>
+    <div id="planDetailsList" class="exercise-list">
+      </div>
+    <div class="button-row">
+      <button id="backToMainBtn" class="btn-secondary">Wróć</button>
+      <button id="editPlanBtn">Edytuj Plan</button>
+      <button id="startWorkoutBtn" class="btn-success">Zacznij Trening</button>
     </div>
   </section>
+
+  <section id="panel-edit-plan" class="panel">
+    <h2 id="editPlanTitle">Edytuj: ...</h2>
+    <div class="input-row">
+      <input id="exName" placeholder="Nazwa ćwiczenia" />
+      <input id="exTargetSets" type="number" min="1" placeholder="Serie" />
+      <input id="exTargetReps" type="number" min="1" placeholder="Powt." />
+      <button id="addExerciseBtn">Dodaj</button>
+    </div>
+    <div id="editPlanList" class="exercise-list">
+      </div>
+    <div class="button-row">
+      <button id="savePlanChangesBtn" class="btn-secondary">Zapisz i Wróć</button>
+    </div>
+  </section>
+
+  <section id="panel-active-workout" class="panel">
+    <h2 id="activeWorkoutTitle">Trening: ...</h2>
+    <div id="activeWorkoutList">
+      </div>
+    <button id="finishWorkoutBtn" class="btn-danger">Zakończ i Zapisz Trening</button>
+  </section>
+
 
   <section id="panel-history" class="panel">
     <h2>Historia i logi 📜</h2>
@@ -63,15 +81,14 @@
       <option value="light">Jasny</option>
       <option value="dark">Ciemny</option>
     </select>
-    <button id="resetData">Reset danych</button>
+    <button id="resetData" class="btn-danger">Resetuj Wszystkie Dane</button>
   </section>
 
 </main>
 
 <nav class="bottom-nav">
-  <button data-panel="panel-plan">🏋️‍♂️ Plan</button>
+  <button data-panel="panel-main">🏋️‍♂️ Plany</button>
   <button data-panel="panel-history">📜 Historia</button>
-  <button data-panel="panel-timer">⏱️ Timer</button>
   <button data-panel="panel-stats">📈 Statystyki</button>
   <button data-panel="panel-settings">⚙️ Ustawienia</button>
 </nav>

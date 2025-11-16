@@ -1,40 +1,44 @@
-// KLUCZ DO LOCAL STORAGE - Zmieniony, aby uniknąć konfliktów
+// KLUCZ DO LOCAL STORAGE - Utrzymany jako v3
 const STORAGE_KEY = 'trening_pro_v3';
 
-// --- Inicjalizacja stanu ---
-const defaultState = {
-  "username": "",
+// --- Struktury Danych ---
+const defaultUserData = {
   "theme": "light",
   "plans": {
-    "Poniedziałek": [],
-    "Wtorek": [],
-    "Środa": [],
-    "Czwartek": [],
-    "Piątek": [],
-    "Sobota": [],
-    "Niedziela": []
+    "Poniedziałek": [], "Wtorek": [], "Środa": [],
+    "Czwartek": [], "Piątek": [], "Sobota": [], "Niedziela": []
   },
   "logs": [],
   "activeWorkout": {
     "isActive": false,
     "dayName": null,
     "startTime": null,
-    "totalTimerInterval": null, // ID interwału JS
+    "totalTimerInterval": null,
     "exercises": []
   },
   "restTimer": {
-    "interval": null, // ID interwału JS
+    "interval": null, 
     "displayElement": null,
     "secondsLeft": 0
   }
 };
 
-let state = JSON.parse(localStorage.getItem(STORAGE_KEY) || JSON.stringify(defaultState));
-// Użyj domyślnej struktury, jeśli wczytane dane są uszkodzone (np. stare wersje)
-if (!state.plans || !state.activeWorkout) {
-  state = defaultState;
+const defaultState = {
+  "currentUser": null, // ID aktualnie zalogowanego użytkownika
+  "users": [], // Lista obiektów { id: '...', username: '...', data: defaultUserData }
+};
+
+let globalState = JSON.parse(localStorage.getItem(STORAGE_KEY) || JSON.stringify(defaultState));
+// Weryfikacja i naprawa stanu
+if (!globalState.users || !Array.isArray(globalState.users)) {
+  globalState = defaultState;
+  // Usuń stary, uszkodzony klucz
+  localStorage.removeItem('trening_pro_v2'); 
   saveState();
 }
+
+// Skrót do aktualnie aktywnych danych (zwraca defaultUserData jeśli nikt nie jest zalogowany)
+let state = globalState.currentUser ? globalState.users.find(u => u.id === globalState.currentUser)?.data || defaultUserData : defaultUserData;
 
 
 // --- Zmienne globalne DOM ---
@@ -44,37 +48,115 @@ const dayList = document.getElementById('dayList');
 const logArea = document.getElementById('logArea');
 const masterTimerDisplay = document.getElementById('masterTimerDisplay');
 let statsChart = null;
-let currentDay = null; // Przechowuje dzień wybrany do edycji/treningu
+let currentDay = null;
 
-// --- Zapis stanu ---
+// --- System Zapisywania Danych (Multi-User) ---
+
 function saveState() {
-  // Zapisz tylko dane, które można serializować (bez interwałów)
-  const stateToSave = { ...state };
-  if (stateToSave.activeWorkout) {
-    stateToSave.activeWorkout.totalTimerInterval = null;
+  if (globalState.currentUser) {
+    const userIndex = globalState.users.findIndex(u => u.id === globalState.currentUser);
+    if (userIndex !== -1) {
+      // Wyczyść interwały przed zapisem (nie mogą być serializowane)
+      const dataToSave = JSON.parse(JSON.stringify(state)); 
+      if (dataToSave.activeWorkout) dataToSave.activeWorkout.totalTimerInterval = null;
+      if (dataToSave.restTimer) {
+        dataToSave.restTimer.interval = null;
+        dataToSave.restTimer.displayElement = null;
+      }
+      globalState.users[userIndex].data = dataToSave;
+    }
   }
-  if (stateToSave.restTimer) {
-    stateToSave.restTimer.interval = null;
-    stateToSave.restTimer.displayElement = null; // Nie można serializować elementu DOM
-  }
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(stateToSave));
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(globalState));
 }
+
+// --- Logowanie i Użytkownicy (REQ 2) ---
+
+function generateUserId() { return 'user_' + Date.now(); }
+
+function renderUserList() {
+  const userList = document.getElementById('userList');
+  userList.innerHTML = '';
+  
+  if (globalState.users.length === 0) {
+    userList.innerHTML = '<p style="color:var(--muted)">Brak kont. Utwórz nowe, by zacząć.</p>';
+  }
+
+  globalState.users.forEach(user => {
+    const isActive = user.id === globalState.currentUser;
+    const item = document.createElement('div');
+    item.className = `user-item ${isActive ? 'active' : ''}`;
+    item.innerHTML = `
+      <span class="username-display">${user.username}</span>
+      <div class="user-actions">
+        <button class="btn-secondary" onclick="loginUser('${user.id}')" ${isActive ? 'disabled' : ''}>Wybierz</button>
+        <button class="btn-danger btn-delete" onclick="deleteUser('${user.id}')">Usuń</button>
+      </div>
+    `;
+    userList.appendChild(item);
+  });
+}
+
+function loginUser(userId) {
+  globalState.currentUser = userId;
+  const user = globalState.users.find(u => u.id === userId);
+  state = user.data; // Ustaw stan na dane nowego użytkownika
+  saveState();
+  initApp(true); // Ponowne uruchomienie aplikacji
+}
+
+function registerUser() {
+  const username = document.getElementById('newUsername').value.trim();
+  if (!username) { return alert('Wprowadź nazwę użytkownika.'); }
+  if (globalState.users.some(u => u.username === username)) { return alert('Użytkownik o tej nazwie już istnieje.'); }
+
+  const newUser = {
+    id: generateUserId(),
+    username: username,
+    data: JSON.parse(JSON.stringify(defaultUserData)) // Głęboka kopia
+  };
+
+  globalState.users.push(newUser);
+  document.getElementById('newUsername').value = '';
+  loginUser(newUser.id);
+  renderUserList();
+}
+
+function deleteUser(userId) {
+  if (globalState.currentUser === userId) { return alert('Nie możesz usunąć aktualnie zalogowanego konta. Najpierw przełącz się na inne.'); }
+  if (confirm(`Czy na pewno chcesz usunąć konto użytkownika "${globalState.users.find(u => u.id === userId).username}" i wszystkie jego dane?`)) {
+    globalState.users = globalState.users.filter(u => u.id !== userId);
+    saveState();
+    renderUserList();
+  }
+}
+
+document.getElementById('changeUser').onclick = () => showPanel('panel-login');
+document.getElementById('resetData').onclick = () => {
+  if (confirm('UWAGA: Spowoduje to usunięcie WSZYSTKICH DANYCH (wszystkich użytkowników, planów i historii) z przeglądarki. Czy kontynuować?')) {
+    localStorage.removeItem(STORAGE_KEY);
+    location.reload();
+  }
+}
+
 
 // --- Główny System Nawigacji ---
 
 function showPanel(panelId) {
+  // Wymuś logowanie, jeśli nikt nie jest zalogowany
+  if (!globalState.currentUser && panelId !== 'panel-login') {
+    return showPanel('panel-login');
+  }
+
   // Jeśli trening jest aktywny, wymuś pozostanie w panelu treningu
   if (state.activeWorkout.isActive && panelId !== 'panel-active-workout') {
-    alert("Najpierw zakończ aktywny trening!");
-    return;
+    return alert("Najpierw zakończ aktywny trening!");
   }
+  
   panels.forEach(p => p.classList.remove('active'));
   document.getElementById(panelId).classList.add('active');
 
   if (panelId === 'panel-stats') {
-    if (!statsChart) {
-      initStatsChart();
-    }
+    if (!statsChart) initStatsChart();
     updateStatsChart();
   }
 }
@@ -86,31 +168,45 @@ document.querySelectorAll('.bottom-nav button').forEach(btn => {
 document.getElementById('backToMainBtn').onclick = () => showPanel('panel-main');
 document.getElementById('savePlanChangesBtn').onclick = () => {
   saveState();
+  renderDayList(); // Aktualizacja liczby ćwiczeń na głównej liście
   showPlanDetails(currentDay);
 };
 
 // --- Ustawienia i Motyw ---
+
 const usernameInput = document.getElementById('username');
-usernameInput.value = state.username;
-usernameInput.onchange = e => { state.username = e.target.value; saveState(); updateWelcome(); }
 function updateWelcome() {
-  welcomeMsg.textContent = state.username ? `, ${state.username}!` : '';
-}
-
-const themeSelect = document.getElementById('themeSelect');
-themeSelect.value = state.theme;
-function applyTheme() { document.body.classList.toggle('dark', state.theme === 'dark'); }
-applyTheme();
-themeSelect.onchange = e => { state.theme = e.target.value; applyTheme(); saveState(); }
-
-document.getElementById('resetData').onclick = () => {
-  if (confirm('JESTEŚ PEWIEN? Spowoduje to usunięcie WSZYSTKICH planów, historii i ustawień.')) {
-    localStorage.removeItem(STORAGE_KEY);
-    location.reload();
+  const user = globalState.users.find(u => u.id === globalState.currentUser);
+  if (user) {
+     usernameInput.value = user.username;
+     welcomeMsg.textContent = `, ${user.username}!`;
+  } else {
+     usernameInput.value = '';
+     welcomeMsg.textContent = '';
   }
 }
 
-// --- Logika Planów Treningowych (REQ 1, 2) ---
+usernameInput.onchange = e => { 
+    const user = globalState.users.find(u => u.id === globalState.currentUser);
+    if (user) {
+        user.username = e.target.value;
+        saveState(); 
+        updateWelcome(); 
+        renderUserList();
+    }
+}
+
+const themeSelect = document.getElementById('themeSelect');
+function applyTheme() { 
+  if (globalState.currentUser) {
+    document.body.classList.toggle('dark', state.theme === 'dark'); 
+    themeSelect.value = state.theme;
+  }
+}
+themeSelect.onchange = e => { state.theme = e.target.value; applyTheme(); saveState(); }
+
+
+// --- Logika Planów Treningowych ---
 
 function renderDayList() {
   dayList.innerHTML = '';
@@ -130,7 +226,7 @@ function showPlanDetails(dayName) {
   list.innerHTML = '';
 
   if (state.plans[dayName].length === 0) {
-    list.innerHTML = '<p style="color:var(--muted)">Brak ćwiczeń w planie. Kliknij "Edytuj Plan", aby je dodać.</p>';
+    list.innerHTML = '<p style="color:var(--muted)">Brak ćwiczeń w planie. Dodaj je w edytorze.</p>';
   }
 
   state.plans[dayName].forEach(ex => {
@@ -156,7 +252,6 @@ function showPlanEditor(dayName) {
   document.getElementById('editPlanTitle').textContent = `Edytuj: ${dayName}`;
   renderEditPlanList();
   
-  // Przypisanie funkcji do przycisku dodawania
   document.getElementById('addExerciseBtn').onclick = () => {
     const name = document.getElementById('exName').value;
     const sets = +document.getElementById('exTargetSets').value;
@@ -196,6 +291,7 @@ function renderEditPlanList() {
         state.plans[currentDay].splice(index, 1);
         saveState();
         renderEditPlanList();
+        renderDayList();
       }
     };
     list.appendChild(div);
@@ -204,7 +300,6 @@ function renderEditPlanList() {
 
 // --- Logika Aktywnego Treningu (REQ 3, 4, 5) ---
 
-// 1. Start Treningu
 function startWorkout(dayName) {
   if (state.plans[dayName].length === 0) {
     return alert("Ten plan jest pusty. Najpierw dodaj ćwiczenia, aby zacząć.");
@@ -217,11 +312,11 @@ function startWorkout(dayName) {
   state.activeWorkout.startTime = Date.now();
   state.activeWorkout.exercises = state.plans[dayName].map(ex => ({
     ...ex,
-    loggedSets: [] // Dodaje nowe pole na wykonane serie
+    loggedSets: []
   }));
 
   // Wystartuj główny timer
-  clearInterval(state.activeWorkout.totalTimerInterval); // Upewnij się, że nie ma starego
+  clearInterval(state.activeWorkout.totalTimerInterval);
   state.activeWorkout.totalTimerInterval = setInterval(updateMasterTimer, 1000);
   
   masterTimerDisplay.style.display = 'block';
@@ -231,7 +326,6 @@ function startWorkout(dayName) {
   saveState();
 }
 
-// 2. Renderowanie Panelu Aktywnego Treningu
 function renderActiveWorkout() {
   document.getElementById('activeWorkoutTitle').textContent = `Trening: ${state.activeWorkout.dayName}`;
   const list = document.getElementById('activeWorkoutList');
@@ -250,6 +344,9 @@ function renderActiveWorkout() {
       </div>
     `).join('');
 
+    // Domyślna wartość ciężaru to ostatni użyty ciężar
+    const lastWeight = ex.loggedSets.slice(-1)[0]?.weight || '';
+
     card.innerHTML = `
       <h3>${ex.name}</h3>
       <small>Cel: ${ex.targetSets} serie x ${ex.targetReps} powt.</small>
@@ -257,7 +354,7 @@ function renderActiveWorkout() {
       <div class="logged-sets-list">${setsHTML}</div>
       
       <form class="log-set-form" data-ex-index="${exIndex}">
-        <input type="number" class="log-weight" placeholder="Ciężar (kg)" value="${ex.loggedSets.slice(-1)[0]?.weight || ''}" required>
+        <input type="number" class="log-weight" placeholder="Ciężar (kg)" value="${lastWeight}" required>
         <input type="number" class="log-reps" placeholder="Powtórzenia" required>
         <button type="submit" class="btn-success">Zapisz Serię</button>
       </form>
@@ -266,6 +363,7 @@ function renderActiveWorkout() {
         <span class="rest-timer-display" id="rest-timer-${exIndex}">00:00</span>
         <button class="start-rest-btn btn-secondary" data-ex-index="${exIndex}" data-seconds="60">60s</button>
         <button class="start-rest-btn btn-secondary" data-ex-index="${exIndex}" data-seconds="90">90s</button>
+        <button class="start-rest-btn btn-secondary" data-ex-index="${exIndex}" data-seconds="120">120s</button>
       </div>
     `;
     list.appendChild(card);
@@ -280,9 +378,8 @@ function renderActiveWorkout() {
       const reps = e.target.querySelector('.log-reps').value;
       if (weight && reps && +weight >= 0 && +reps >= 1) {
         logSet(exIndex, +weight, +reps);
-        e.target.querySelector('.log-reps').value = ''; // Wyczyść tylko powtórzenia
-        // Opcjonalnie: Uruchom timer odpoczynku po zapisaniu serii
-        startRestTimer(exIndex, 60); 
+        e.target.querySelector('.log-reps').value = '';
+        startRestTimer(exIndex, 60); // Auto-start 60s przerwy po zapisie
       } else {
         alert('Podaj poprawne wartości dla ciężaru (min. 0) i powtórzeń (min. 1).');
       }
@@ -302,14 +399,12 @@ function renderActiveWorkout() {
   });
 }
 
-// 3. Logowanie Serii (REQ 4)
 function logSet(exIndex, weight, reps) {
   state.activeWorkout.exercises[exIndex].loggedSets.push({ weight, reps });
   saveState();
-  renderActiveWorkout(); // Odśwież widok
+  renderActiveWorkout();
 }
 
-// 3a. Usuwanie Serii
 function removeSet(exIndex, setIndex) {
   if (confirm('Usunąć tę serię?')) {
     state.activeWorkout.exercises[exIndex].loggedSets.splice(setIndex, 1);
@@ -318,22 +413,18 @@ function removeSet(exIndex, setIndex) {
   }
 }
 
-// 4. Timer Odpoczynku (REQ 5)
 function startRestTimer(exIndex, seconds) {
-  // Wyczyść ewentualny działający timer
   if (state.restTimer.interval) {
     clearInterval(state.restTimer.interval);
     if (state.restTimer.displayElement) {
-       // Opcjonalnie przywróć poprzedniemu wyświetlaczowi standardowy kolor, jeśli to możliwe
        state.restTimer.displayElement.style.color = 'var(--accent)';
     }
   }
 
-  // Ustaw nowy timer
   const displayElement = document.getElementById(`rest-timer-${exIndex}`);
   state.restTimer.displayElement = displayElement;
   state.restTimer.secondsLeft = seconds;
-  displayElement.style.color = 'var(--danger)'; // Zmień kolor na czerwony podczas odliczania
+  displayElement.style.color = 'var(--danger)';
 
   const updateDisplay = () => {
     const mins = Math.floor(state.restTimer.secondsLeft / 60).toString().padStart(2, '0');
@@ -349,14 +440,12 @@ function startRestTimer(exIndex, seconds) {
     if (state.restTimer.secondsLeft <= 0) {
       clearInterval(state.restTimer.interval);
       state.restTimer.interval = null;
-      displayElement.textContent = "Start!";
+      displayElement.textContent = "START!";
       displayElement.style.color = 'var(--success)';
-      // alert("Przerwa zakończona!"); // Opcjonalny alert
     }
   }, 1000);
 }
 
-// 5. Główny Stoper Sesji (REQ 3)
 function updateMasterTimer() {
   if (!state.activeWorkout.isActive) return;
   
@@ -368,7 +457,6 @@ function updateMasterTimer() {
   masterTimerDisplay.textContent = `${hours}:${minutes}:${seconds}`;
 }
 
-// 6. Zakończenie Treningu
 document.getElementById('finishWorkoutBtn').onclick = () => {
   if (!confirm('Zakończyć i zapisać ten trening?')) return;
 
@@ -384,55 +472,77 @@ document.getElementById('finishWorkoutBtn').onclick = () => {
     date: new Date().toISOString().split('T')[0],
     dayName: state.activeWorkout.dayName,
     duration: finalDuration,
-    exercises: state.activeWorkout.exercises.filter(ex => ex.loggedSets.length > 0) // Tylko ćwiczenia z seriami
+    exercises: state.activeWorkout.exercises.filter(ex => ex.loggedSets.length > 0)
   };
   state.logs.push(logEntry);
 
   // 3. Zresetuj stan aktywnego treningu
-  state.activeWorkout = defaultState.activeWorkout; // Użyj czystego obiektu
-  state.restTimer = defaultState.restTimer;
+  state.activeWorkout = defaultUserData.activeWorkout;
+  state.restTimer = defaultUserData.restTimer;
 
   saveState();
   renderLogs();
-  renderDayList(); // Aktualizuj, bo to może zająć miejsce na głównej liście
+  renderDayList();
   showPanel('panel-main');
 };
 
-// --- Historia i Logi ---
+// --- Historia i Logi (REQ 1 - Szczegółowe Serie) ---
+
 function renderLogs() {
   logArea.innerHTML = '';
   if (state.logs.length === 0) {
-     logArea.innerHTML = '<p style="color:var(--muted)">Brak zapisanych treningów w historii.</p>';
+     logArea.innerHTML = '<p style="color:var(--muted)">Brak zapisanych treningów w historii dla tego użytkownika.</p>';
      return;
   }
   
-  state.logs.slice().reverse().forEach(log => {
+  state.logs.slice().reverse().forEach((log) => {
     const div = document.createElement('div');
-    div.className = 'card';
-    
-    const exercisesSummary = log.exercises.map(ex => 
-      // Oblicz sumę serii dla każdego ćwiczenia w logu
-      `<li style="margin-left: -20px;">${ex.name}: <strong>${ex.loggedSets.length}</strong> serii</li>`
-    ).join('');
+    div.className = 'card log-summary-card';
 
     div.innerHTML = `
-      <div class="log-summary">
-        ${log.date} - ${log.dayName}
+      <div class="log-header">
+        <span class="log-summary">
+          ${log.date} - ${log.dayName} (Czas: ${log.duration})
+        </span>
+        <span class="log-toggle">▶</span>
       </div>
-      <div class="log-details" style="font-size:0.9em; margin-top: 5px;">
-        Czas: ${log.duration}<br>
-        <ul style="list-style-type: disc;">${exercisesSummary}</ul>
+      <div class="log-details-hidden" style="display:none;">
+        <p style="font-weight:bold; margin-bottom: 5px;">Ćwiczenia:</p>
+        <ul style="list-style-type: none; padding-left: 0;">
+          ${log.exercises.map(ex => `
+            <li class="exercise-detail">
+              <strong>${ex.name}</strong>
+              <ul style="list-style-type: circle; margin-top: 5px; padding-left: 20px;">
+                ${ex.loggedSets.map((set, setIndex) => `
+                  <li>Seria ${setIndex + 1}: ${set.weight} kg x ${set.reps} powt.</li>
+                `).join('')}
+              </ul>
+            </li>
+          `).join('')}
+        </ul>
       </div>
     `;
     logArea.appendChild(div);
   });
+  
+  // Logika rozwijania/zwijania
+  document.querySelectorAll('.log-summary-card').forEach(card => {
+    card.querySelector('.log-header').onclick = () => {
+      const details = card.querySelector('.log-details-hidden');
+      const toggle = card.querySelector('.log-toggle');
+      const isHidden = details.style.display === 'none';
+      
+      details.style.display = isHidden ? 'block' : 'none';
+      toggle.textContent = isHidden ? '▼' : '▶';
+    };
+  });
 }
 
-// --- Import/Eksport (zaktualizowany do v3) ---
+// --- Import/Eksport ---
 document.getElementById('exportBtn').onclick = () => {
   const blob = new Blob([JSON.stringify(state.logs)], { type: 'application/json' });
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-  a.download = 'trening_logs_v3.json'; a.click();
+  a.download = `${globalState.users.find(u => u.id === globalState.currentUser)?.username || 'user'}_trening_logs_v4.json`; a.click();
 }
 document.getElementById('importBtn').onclick = () => document.getElementById('fileInput').click();
 document.getElementById('fileInput').onchange = e => {
@@ -449,7 +559,7 @@ document.getElementById('fileInput').onchange = e => {
   reader.readAsText(file);
 }
 document.getElementById('clearHistory').onclick = () => {
-  if (confirm('Wyczyścić całą historię treningów?')) {
+  if (confirm('Wyczyścić całą historię treningów dla bieżącego użytkownika?')) {
     state.logs = []; saveState(); renderLogs(); updateStatsChart();
   }
 }
@@ -491,19 +601,32 @@ function updateStatsChart() {
 }
 
 // --- Funkcja startowa ---
-function initApp() {
-  // Sprawdź, czy trening jest w toku (np. po odświeżeniu strony)
+function initApp(isReload = false) {
+  // Jeśli nikt nie jest zalogowany
+  if (!globalState.currentUser) {
+    renderUserList();
+    applyTheme(); // Ustawienia motywu (domyślnie jasny)
+    return showPanel('panel-login');
+  } 
+
+  // Użytkownik jest zalogowany
+  const user = globalState.users.find(u => u.id === globalState.currentUser);
+  state = user.data;
+  
+  // Wyczyść ewentualne pozostałe interwały JS
+  if (state.activeWorkout.totalTimerInterval) clearInterval(state.activeWorkout.totalTimerInterval);
+  if (state.restTimer.interval) clearInterval(state.restTimer.interval);
+
+  // Sprawdzenie wznowienia treningu
   if (state.activeWorkout.isActive) {
     if (confirm("Wykryto niezakończony trening. Chcesz go wznowić?")) {
-      // Ponownie przypisz interwał
       state.activeWorkout.totalTimerInterval = setInterval(updateMasterTimer, 1000);
       masterTimerDisplay.style.display = 'block';
       renderActiveWorkout();
       showPanel('panel-active-workout');
     } else {
-      // Anuluj trening (reset do stanu początkowego)
-      state.activeWorkout = defaultState.activeWorkout;
-      state.restTimer = defaultState.restTimer;
+      state.activeWorkout = defaultUserData.activeWorkout;
+      state.restTimer = defaultUserData.restTimer;
       saveState();
       showPanel('panel-main');
     }
@@ -518,4 +641,8 @@ function initApp() {
 }
 
 // --- Start Aplikacji ---
-initApp();
+document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('registerUserBtn').onclick = registerUser;
+    
+    initApp();
+});

@@ -8,10 +8,15 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
-
 <script type="module">
-  
-  // --- Twoja Własna Konfiguracja Firebase (wklejona na stałe) ---
+  // Import the functions you need from the SDKs you need
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-app.js";
+  import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-analytics.js";
+  // TODO: Add SDKs for Firebase products that you want to use
+  // https://firebase.google.com/docs/web/setup#available-libraries
+
+  // Your web app's Firebase configuration
+  // For Firebase JS SDK v7.20.0 and later, measurementId is optional
   const firebaseConfig = {
     apiKey: "AIzaSyCacBxUhSiqaaCBrmVVKluMHMs3iMpR_cA",
     authDomain: "pro-plan-e6f00.firebaseapp.com",
@@ -19,38 +24,13 @@
     projectId: "pro-plan-e6f00",
     storageBucket: "pro-plan-e6f00.firebasestorage.app",
     messagingSenderId: "887703996706",
-    appId: "1:887703996706:web:a0f06602408f4307697d7b",
-    measurementId: "G-7XN0YLKZWX"
+    appId: "1:887703996706:web:b7363c891b41b7d4697d7b",
+    measurementId: "G-1WTB0NNLEB"
   };
 
-  // Ustawienie flag i ID aplikacji
-  window.IS_FIREBASE_CONFIGURED = Object.keys(firebaseConfig).length > 0 && firebaseConfig.apiKey;
-  window.appId = firebaseConfig.appId; // Ustaw globalnie ID aplikacji
-
-  // Ustawienie globalnych referencji (dostępnych w app.js)
-  window.app, window.auth, window.db;
-
-  // Sprawdź, czy konfiguracja Firebase istnieje.
-  if (window.IS_FIREBASE_CONFIGURED) {
-    // Modularne importy Firebase (zamiast CDN)
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-    import { getAuth } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-    import { getFirestore, doc, setDoc, onSnapshot, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-    
-    // Inicjalizacja usług
-    window.app = initializeApp(firebaseConfig);
-    window.auth = getAuth(window.app);
-    window.db = getFirestore(window.app);
-
-    console.log("Firebase configured and initialized with Firestore.");
-
-  } else {
-    // --- Mockowanie (w przypadku braku konfiguracji) ---
-    console.error("Firebase configuration missing. Cloud login will not work.");
-    // Zapewniamy minimalne, nierealne implementacje, aby kod się nie złamał
-    window.auth = { onAuthStateChanged: (cb) => { setTimeout(() => cb(null), 100); return () => {}; }, signOut: async () => {}, signInWithEmailAndPassword: async () => { throw new Error('Brak konfiguracji Firebase.'); }, createUserWithEmailAndPassword: async () => { throw new Error('Brak konfiguracji Firebase.'); }};
-    window.db = {};
-  }
+  // Initialize Firebase
+  const app = initializeApp(firebaseConfig);
+  const analytics = getAnalytics(app);
 </script>
 
 <header class="top">

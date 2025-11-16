@@ -12,32 +12,49 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
   // Zmienne globalne dostarczane przez Canvas (MUSZĄ BYĆ UŻYTE)
-  const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
-  const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : '';
-  const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+  const __firebase_config = typeof __firebase_config !== 'undefined' ? __firebase_config : '{}';
+  const __initial_auth_token = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : '';
+  const __app_id = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+  const firebaseConfig = JSON.parse(__firebase_config);
+  
+  // Flaga wskazująca, czy Firebase jest skonfigurowany
+  window.IS_FIREBASE_CONFIGURED = Object.keys(firebaseConfig).length > 0 && firebaseConfig.apiKey;
 
   // Inicjalizacja Firebase i globalne zmienne (WAŻNE!)
   let app, auth, db;
   
-  if (Object.keys(firebaseConfig).length > 0) {
-    // Inicjalizacja usług Firebase
+  if (window.IS_FIREBASE_CONFIGURED) {
+    // Używamy autentycznej konfiguracji
     app = firebase.initializeApp(firebaseConfig);
     auth = firebase.auth();
     db = firebase.database();
-    
-    // Ustawienie logowania na Debug, by widzieć potencjalne błędy
     firebase.firestore.setLogLevel('debug');
+    console.log("Firebase configured and initialized.");
+
   } else {
-    // Fallback w przypadku braku konfiguracji Firebase - użycie mocków jest niezbędne,
-    // aby app.js się nie zawiesił przy próbie dostępu do metod Firebase.
-    console.error("Firebase is not configured. Data persistence will be unavailable.");
+    // Fallback: Mockowanie Firebase i użycie localStorage
+    console.warn("Firebase configuration missing. Switching to localStorage mode.");
+    
+    // Mockowanie obiektów Firebase, aby uniknąć błędów w app.js
     window.auth = { 
-        onAuthStateChanged: (callback) => callback(null), 
+        onAuthStateChanged: (callback) => {
+            // W trybie lokalnym, symulujemy zalogowanie anonimowe
+            const mockUser = { uid: 'local_user', email: 'local@storage.pl', isAnonymous: true };
+            setTimeout(() => callback(mockUser), 100); 
+            return () => {}; // Zwróć pustą funkcję do czyszczenia
+        }, 
         signOut: async () => {}, 
-        signInWithEmailAndPassword: async () => { throw new Error('Firebase not configured'); }, 
-        createUserWithEmailAndPassword: async () => { throw new Error('Firebase not configured'); }
+        signInWithCustomToken: async () => { throw new Error('Local mode: Sign in unavailable.'); },
+        signInAnonymously: async () => { /* Logika w app.js obsłuży ten stan */ },
+        signInWithEmailAndPassword: async () => { throw new Error('Local mode: Sign in unavailable.'); }, 
+        createUserWithEmailAndPassword: async () => { throw new Error('Local mode: Sign in unavailable.'); }
     };
-    window.db = { ref: () => ({ once: async () => ({ val: () => null }), set: async () => {} }) };
+    window.db = { 
+        ref: () => ({ once: async () => ({ val: () => null }), set: async () => {} }) 
+    };
+    // Dodaj zmienną globalną (wymagane w app.js)
+    window.appId = __app_id;
   }
 </script>
 </head>
@@ -152,7 +169,7 @@
   <section id="panel-settings" class="panel">
     <h2>Ustawienia ⚙️</h2>
     
-    <label for="loggedUserEmailDisplay" style="font-size: 0.9em; margin-bottom: 5px;">Zalogowany jako:</label>
+    <label for="loggedUserEmailDisplay" style="font-size: 0.9em; margin-bottom: 5px;">Status konta:</label>
     <p id="loggedUserEmailDisplay" style="font-weight: bold; margin-bottom: 20px; color: var(--accent);"></p>
 
     <label for="themeSelect">Motyw aplikacji:</label>

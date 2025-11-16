@@ -40,7 +40,6 @@ let currentDay = null;
 function getDbRef() {
     if (!currentUserId) return null;
     // Ścieżka: users/[UID_Użytkownika]/data
-    // Używamy ścieżki "data" aby przechowywać wszystkie dane stanu pod jednym kluczem
     return db.ref('users/' + currentUserId + '/data');
 }
 
@@ -157,7 +156,19 @@ document.getElementById('registerBtn').onclick = async () => {
 };
 
 document.getElementById('logoutBtn').onclick = async () => {
-    if (confirm("Czy na pewno chcesz się wylogować?")) {
+    // Używamy alert zamiast confirm, by nie blokować iframa
+    const modal = document.createElement('div');
+    modal.className = 'modal-confirm';
+    modal.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);padding:20px;background:white;border-radius:10px;box-shadow:0 0 20px rgba(0,0,0,0.5);z-index:100; text-align: center;';
+    modal.innerHTML = `
+        <p>Czy na pewno chcesz się wylogować?</p>
+        <button id="modalConfirmYes" class="btn-danger" style="margin-right: 10px;">Tak</button>
+        <button id="modalConfirmNo" class="btn-secondary">Nie</button>
+    `;
+    document.body.appendChild(modal);
+
+    document.getElementById('modalConfirmYes').onclick = async () => {
+        modal.remove();
         // Zakończenie timerów
         if (masterTimerInterval) clearInterval(masterTimerInterval);
         if (restTimerInterval) clearInterval(restTimerInterval);
@@ -165,7 +176,10 @@ document.getElementById('logoutBtn').onclick = async () => {
         masterTimerDisplay.style.display = 'none';
         
         await auth.signOut();
-    }
+    };
+    document.getElementById('modalConfirmNo').onclick = () => {
+        modal.remove();
+    };
 };
 
 // --- Główny Listener Firebase (Uruchomienie Aplikacji) ---
@@ -198,18 +212,35 @@ function initAppUI() {
         // Upewnij się, że stary interwał nie działa
         if (masterTimerInterval) clearInterval(masterTimerInterval); 
         
-        if (confirm("Wykryto niezakończony trening. Chcesz go wznowić?")) {
+        // Zastąpienie window.confirm() modalem
+        const modal = document.createElement('div');
+        modal.className = 'modal-confirm';
+        modal.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);padding:20px;background:white;border-radius:10px;box-shadow:0 0 20px rgba(0,0,0,0.5);z-index:100; text-align: center;';
+        modal.innerHTML = `
+            <p>Wykryto niezakończony trening. Chcesz go wznowić?</p>
+            <button id="modalConfirmYes" class="btn-success" style="margin-right: 10px;">Wznów</button>
+            <button id="modalConfirmNo" class="btn-secondary">Anuluj</button>
+        `;
+        document.body.appendChild(modal);
+
+        document.getElementById('modalConfirmYes').onclick = () => {
+            modal.remove();
             masterTimerInterval = setInterval(updateMasterTimer, 1000);
             masterTimerDisplay.style.display = 'block';
             renderActiveWorkout();
             showPanel('panel-active-workout');
-        } else {
+        };
+
+        document.getElementById('modalConfirmNo').onclick = async () => {
+            modal.remove();
             // Anuluj trening (zresetuj, zapisz do chmury i zacznij normalnie)
             state.activeWorkout = defaultUserState.activeWorkout;
-            saveState(); 
+            await saveState(); 
             showPanel('panel-main');
-        }
+        };
+
     } else {
+        // Jeśli nie ma aktywnego treningu, pokaż główny panel
         showPanel('panel-main');
     }
 
@@ -231,10 +262,10 @@ function showPanel(panelId) {
 
   // Wymuś pozostanie w aktywnym treningu
   if (state.activeWorkout.isActive && panelId !== 'panel-active-workout') {
-    // Używamy własnego komunikatu zamiast alert(), aby nie blokować iframa
+    // Używamy własnego komunikatu zamiast alert()
     const modal = document.createElement('div');
     modal.className = 'modal-message';
-    modal.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);padding:20px;background:white;border-radius:10px;box-shadow:0 0 20px rgba(0,0,0,0.5);z-index:100;';
+    modal.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);padding:20px;background:var(--card);border-radius:10px;box-shadow:0 0 20px rgba(0,0,0,0.5);z-index:100; color: var(--text);';
     modal.innerHTML = '<strong>Najpierw zakończ aktywny trening!</strong>';
     document.body.appendChild(modal);
     setTimeout(() => modal.remove(), 2000);
@@ -285,10 +316,14 @@ themeSelect.onchange = e => {
 
 function renderDayList() {
   dayList.innerHTML = '';
-  Object.keys(state.plans).forEach(dayName => {
+  // Iterujemy po domyślnych kluczach planów
+  Object.keys(defaultUserState.plans).forEach(dayName => {
+    // Upewniamy się, że plan dla danego dnia istnieje w bieżącym stanie
+    const plan = state.plans[dayName] || [];
+
     const btn = document.createElement('button');
     btn.className = 'day-btn';
-    btn.textContent = `${dayName} (${state.plans[dayName].length} ćw.)`;
+    btn.textContent = `${dayName} (${plan.length} ćw.)`;
     btn.onclick = () => showPlanDetails(dayName);
     dayList.appendChild(btn);
   });
@@ -300,11 +335,13 @@ function showPlanDetails(dayName) {
   const list = document.getElementById('planDetailsList');
   list.innerHTML = '';
 
-  if (state.plans[dayName].length === 0) {
+  const plan = state.plans[dayName] || [];
+
+  if (plan.length === 0) {
     list.innerHTML = '<p style="color:var(--muted)">Brak ćwiczeń w planie. Dodaj je w edytorze.</p>';
   }
 
-  state.plans[dayName].forEach(ex => {
+  plan.forEach(ex => {
     const div = document.createElement('div');
     div.className = 'card';
     div.innerHTML = `
@@ -332,9 +369,15 @@ function showPlanEditor(dayName) {
     const sets = +document.getElementById('exTargetSets').value;
     const reps = +document.getElementById('exTargetReps').value;
 
+    // Zastąpienie alert() modalem
     if (!name || sets < 1 || reps < 1) {
-      alert('Wypełnij wszystkie pola poprawnymi wartościami (min. 1).');
-      return;
+        const modal = document.createElement('div');
+        modal.className = 'modal-message';
+        modal.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);padding:20px;background:white;border-radius:10px;box-shadow:0 0 20px rgba(0,0,0,0.5);z-index:100;';
+        modal.innerHTML = '<strong>Wypełnij wszystkie pola poprawnymi wartościami (min. 1).</strong>';
+        document.body.appendChild(modal);
+        setTimeout(() => modal.remove(), 2000);
+        return;
     }
 
     state.plans[dayName].push({ name: name, targetSets: sets, targetReps: reps });
@@ -362,12 +405,27 @@ function renderEditPlanList() {
       <button class="btn-delete" data-index="${index}">Usuń</button>
     `;
     div.querySelector('.btn-delete').onclick = () => {
-      if (confirm(`Usunąć "${ex.name}" z planu?`)) {
+      // Zastąpienie confirm() modalem
+      const modal = document.createElement('div');
+      modal.className = 'modal-confirm';
+      modal.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);padding:20px;background:white;border-radius:10px;box-shadow:0 0 20px rgba(0,0,0,0.5);z-index:100; text-align: center;';
+      modal.innerHTML = `
+          <p>Usunąć "${ex.name}" z planu?</p>
+          <button id="modalConfirmYes" class="btn-danger" style="margin-right: 10px;">Tak</button>
+          <button id="modalConfirmNo" class="btn-secondary">Nie</button>
+      `;
+      document.body.appendChild(modal);
+
+      document.getElementById('modalConfirmYes').onclick = () => {
+        modal.remove();
         state.plans[currentDay].splice(index, 1);
         saveState();
         renderEditPlanList();
         renderDayList();
-      }
+      };
+      document.getElementById('modalConfirmNo').onclick = () => {
+        modal.remove();
+      };
     };
     list.appendChild(div);
   });
@@ -376,30 +434,53 @@ function renderEditPlanList() {
 // --- Logika Aktywnego Treningu ---
 
 function startWorkout(dayName) {
-  if (state.plans[dayName].length === 0) {
-    alert("Ten plan jest pusty. Najpierw dodaj ćwiczenia, aby zacząć.");
+  const plan = state.plans[dayName] || [];
+
+  // Zastąpienie alert() modalem
+  if (plan.length === 0) {
+    const modal = document.createElement('div');
+    modal.className = 'modal-message';
+    modal.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);padding:20px;background:white;border-radius:10px;box-shadow:0 0 20px rgba(0,0,0,0.5);z-index:100;';
+    modal.innerHTML = '<strong>Ten plan jest pusty. Najpierw dodaj ćwiczenia, aby zacząć.</strong>';
+    document.body.appendChild(modal);
+    setTimeout(() => modal.remove(), 3000);
     return;
   }
-
-  if (!confirm(`Rozpocząć trening: ${dayName}?`)) return;
-
-  state.activeWorkout.isActive = true;
-  state.activeWorkout.dayName = dayName;
-  state.activeWorkout.startTime = Date.now();
-  state.activeWorkout.exercises = state.plans[dayName].map(ex => ({
-    ...ex,
-    loggedSets: []
-  }));
-
-  // Wystartuj główny timer
-  if (masterTimerInterval) clearInterval(masterTimerInterval);
-  masterTimerInterval = setInterval(updateMasterTimer, 1000);
   
-  masterTimerDisplay.style.display = 'block';
-  updateMasterTimer();
-  renderActiveWorkout();
-  showPanel('panel-active-workout');
-  saveState();
+  // Zastąpienie confirm() modalem
+  const modal = document.createElement('div');
+  modal.className = 'modal-confirm';
+  modal.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);padding:20px;background:white;border-radius:10px;box-shadow:0 0 20px rgba(0,0,0,0.5);z-index:100; text-align: center;';
+  modal.innerHTML = `
+      <p>Rozpocząć trening: ${dayName}?</p>
+      <button id="modalConfirmYes" class="btn-success" style="margin-right: 10px;">Start</button>
+      <button id="modalConfirmNo" class="btn-secondary">Anuluj</button>
+  `;
+  document.body.appendChild(modal);
+
+  document.getElementById('modalConfirmYes').onclick = () => {
+    modal.remove();
+    state.activeWorkout.isActive = true;
+    state.activeWorkout.dayName = dayName;
+    state.activeWorkout.startTime = Date.now();
+    state.activeWorkout.exercises = plan.map(ex => ({
+        ...ex,
+        loggedSets: []
+    }));
+
+    // Wystartuj główny timer
+    if (masterTimerInterval) clearInterval(masterTimerInterval);
+    masterTimerInterval = setInterval(updateMasterTimer, 1000);
+    
+    masterTimerDisplay.style.display = 'block';
+    updateMasterTimer();
+    renderActiveWorkout();
+    showPanel('panel-active-workout');
+    saveState();
+  };
+  document.getElementById('modalConfirmNo').onclick = () => {
+    modal.remove();
+  };
 }
 
 function renderActiveWorkout() {
@@ -458,7 +539,13 @@ function renderActiveWorkout() {
         repsInput.value = ''; // Wyczyść tylko pole powtórzeń
         startRestTimer(exIndex, 60); // Standardowy timer 60s
       } else {
-        alert('Podaj poprawne wartości dla ciężaru (min. 0) i powtórzeń (min. 1).');
+        // Zastąpienie alert() modalem
+        const modal = document.createElement('div');
+        modal.className = 'modal-message';
+        modal.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);padding:20px;background:white;border-radius:10px;box-shadow:0 0 20px rgba(0,0,0,0.5);z-index:100;';
+        modal.innerHTML = '<strong>Podaj poprawne wartości dla ciężaru (min. 0) i powtórzeń (min. 1).</strong>';
+        document.body.appendChild(modal);
+        setTimeout(() => modal.remove(), 3000);
       }
     };
   });
@@ -483,11 +570,26 @@ function logSet(exIndex, weight, reps) {
 }
 
 function removeSet(exIndex, setIndex) {
-  if (confirm('Usunąć tę serię?')) {
-    state.activeWorkout.exercises[exIndex].loggedSets.splice(setIndex, 1);
-    saveState();
-    renderActiveWorkout();
-  }
+    // Zastąpienie confirm() modalem
+    const modal = document.createElement('div');
+    modal.className = 'modal-confirm';
+    modal.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);padding:20px;background:white;border-radius:10px;box-shadow:0 0 20px rgba(0,0,0,0.5);z-index:100; text-align: center;';
+    modal.innerHTML = `
+        <p>Usunąć tę serię?</p>
+        <button id="modalConfirmYes" class="btn-danger" style="margin-right: 10px;">Tak</button>
+        <button id="modalConfirmNo" class="btn-secondary">Nie</button>
+    `;
+    document.body.appendChild(modal);
+
+    document.getElementById('modalConfirmYes').onclick = () => {
+        modal.remove();
+        state.activeWorkout.exercises[exIndex].loggedSets.splice(setIndex, 1);
+        saveState();
+        renderActiveWorkout();
+    };
+    document.getElementById('modalConfirmNo').onclick = () => {
+        modal.remove();
+    };
 }
 
 function startRestTimer(exIndex, seconds) {
@@ -540,31 +642,47 @@ function updateMasterTimer() {
 }
 
 document.getElementById('finishWorkoutBtn').onclick = () => {
-  if (!confirm('Zakończyć i zapisać ten trening?')) return;
+    // Zastąpienie confirm() modalem
+    const modal = document.createElement('div');
+    modal.className = 'modal-confirm';
+    modal.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);padding:20px;background:white;border-radius:10px;box-shadow:0 0 20px rgba(0,0,0,0.5);z-index:100; text-align: center;';
+    modal.innerHTML = `
+        <p>Zakończyć i zapisać ten trening?</p>
+        <button id="modalConfirmYes" class="btn-danger" style="margin-right: 10px;">Zapisz</button>
+        <button id="modalConfirmNo" class="btn-secondary">Anuluj</button>
+    `;
+    document.body.appendChild(modal);
 
-  // 1. Zakończenie timerów
-  if (masterTimerInterval) clearInterval(masterTimerInterval);
-  if (restTimerInterval) clearInterval(restTimerInterval);
-  
-  const finalDuration = masterTimerDisplay.textContent;
-  masterTimerDisplay.style.display = 'none';
+    document.getElementById('modalConfirmYes').onclick = () => {
+        modal.remove();
 
-  // 2. Utwórz wpis w logu
-  const logEntry = {
-    date: new Date().toISOString().split('T')[0],
-    dayName: state.activeWorkout.dayName,
-    duration: finalDuration,
-    exercises: state.activeWorkout.exercises.filter(ex => ex.loggedSets.length > 0)
-  };
-  state.logs.push(logEntry);
+        // 1. Zakończenie timerów
+        if (masterTimerInterval) clearInterval(masterTimerInterval);
+        if (restTimerInterval) clearInterval(restTimerInterval);
+        
+        const finalDuration = masterTimerDisplay.textContent;
+        masterTimerDisplay.style.display = 'none';
 
-  // 3. Zresetuj stan aktywnego treningu
-  state.activeWorkout = defaultUserState.activeWorkout;
+        // 2. Utwórz wpis w logu
+        const logEntry = {
+            date: new Date().toISOString().split('T')[0],
+            dayName: state.activeWorkout.dayName,
+            duration: finalDuration,
+            exercises: state.activeWorkout.exercises.filter(ex => ex.loggedSets.length > 0)
+        };
+        state.logs.push(logEntry);
 
-  saveState();
-  renderLogs();
-  renderDayList();
-  showPanel('panel-main');
+        // 3. Zresetuj stan aktywnego treningu
+        state.activeWorkout = defaultUserState.activeWorkout;
+
+        saveState();
+        renderLogs();
+        renderDayList();
+        showPanel('panel-main');
+    };
+    document.getElementById('modalConfirmNo').onclick = () => {
+        modal.remove();
+    };
 };
 
 // --- Historia i Logi ---
@@ -623,10 +741,20 @@ function renderLogs() {
 // --- Import/Eksport i czyszczenie danych ---
 
 document.getElementById('exportBtn').onclick = () => {
-  if (!state.logs || state.logs.length === 0) return alert('Brak danych do eksportu.');
-  const blob = new Blob([JSON.stringify(state.logs)], { type: 'application/json' });
-  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-  a.download = `${currentUserEmail.split('@')[0]}_trening_logs_v5.json`; a.click();
+    // Zastąpienie alert() modalem
+    if (!state.logs || state.logs.length === 0) {
+        const modal = document.createElement('div');
+        modal.className = 'modal-message';
+        modal.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);padding:20px;background:white;border-radius:10px;box-shadow:0 0 20px rgba(0,0,0,0.5);z-index:100;';
+        modal.innerHTML = '<strong>Brak danych do eksportu.</strong>';
+        document.body.appendChild(modal);
+        setTimeout(() => modal.remove(), 3000);
+        return;
+    }
+    
+    const blob = new Blob([JSON.stringify(state.logs)], { type: 'application/json' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = `${currentUserEmail.split('@')[0]}_trening_logs_v5.json`; a.click();
 }
 document.getElementById('importBtn').onclick = () => document.getElementById('fileInput').click();
 document.getElementById('fileInput').onchange = e => {
@@ -639,20 +767,58 @@ document.getElementById('fileInput').onchange = e => {
         state.logs = importedLogs; 
         await saveState(); // Zapisz zaimportowane dane do chmury
         renderLogs(); 
-        alert('Zaimportowano dane do chmury.');
+        // Zastąpienie alert() modalem
+        const modal = document.createElement('div');
+        modal.className = 'modal-message';
+        modal.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);padding:20px;background:white;border-radius:10px;box-shadow:0 0 20px rgba(0,0,0,0.5);z-index:100;';
+        modal.innerHTML = '<strong>Zaimportowano dane do chmury.</strong>';
+        document.body.appendChild(modal);
+        setTimeout(() => modal.remove(), 3000);
+
         updateStatsChart();
-      } else { alert('Nieprawidłowy format pliku JSON.'); }
-    } catch (err) { alert('Błąd podczas odczytu pliku: ' + err.message); }
+      } else { 
+        // Zastąpienie alert() modalem
+        const modal = document.createElement('div');
+        modal.className = 'modal-message';
+        modal.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);padding:20px;background:white;border-radius:10px;box-shadow:0 0 20px rgba(0,0,0,0.5);z-index:100;';
+        modal.innerHTML = '<strong>Nieprawidłowy format pliku JSON.</strong>';
+        document.body.appendChild(modal);
+        setTimeout(() => modal.remove(), 3000);
+      }
+    } catch (err) { 
+        // Zastąpienie alert() modalem
+        const modal = document.createElement('div');
+        modal.className = 'modal-message';
+        modal.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);padding:20px;background:white;border-radius:10px;box-shadow:0 0 20px rgba(0,0,0,0.5);z-index:100;';
+        modal.innerHTML = `<strong>Błąd podczas odczytu pliku: ${err.message}</strong>`;
+        document.body.appendChild(modal);
+        setTimeout(() => modal.remove(), 3000);
+    }
   }
   reader.readAsText(file);
 }
 document.getElementById('clearHistory').onclick = () => {
-  if (confirm('Wyczyścić całą historię treningów dla Twojego konta? Dane te zostaną usunięte z chmury!')) {
-    state.logs = []; 
-    saveState(); 
-    renderLogs(); 
-    updateStatsChart();
-  }
+    // Zastąpienie confirm() modalem
+    const modal = document.createElement('div');
+    modal.className = 'modal-confirm';
+    modal.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);padding:20px;background:white;border-radius:10px;box-shadow:0 0 20px rgba(0,0,0,0.5);z-index:100; text-align: center;';
+    modal.innerHTML = `
+        <p>Wyczyścić całą historię treningów dla Twojego konta? Dane te zostaną usunięte z chmury!</p>
+        <button id="modalConfirmYes" class="btn-danger" style="margin-right: 10px;">Tak, wyczyść</button>
+        <button id="modalConfirmNo" class="btn-secondary">Nie</button>
+    `;
+    document.body.appendChild(modal);
+
+    document.getElementById('modalConfirmYes').onclick = () => {
+        modal.remove();
+        state.logs = []; 
+        saveState(); 
+        renderLogs(); 
+        updateStatsChart();
+    };
+    document.getElementById('modalConfirmNo').onclick = () => {
+        modal.remove();
+    };
 }
 
 // --- Statystyki ---
@@ -695,6 +861,6 @@ function updateStatsChart() {
 
 // --- Start Aplikacji ---
 document.addEventListener('DOMContentLoaded', () => {
-    // Aplikacja czeka na sygnał od Firebase auth.onAuthStateChanged
-    // Początkowo pokaże się tylko panel logowania, dopóki użytkownik się nie zaloguje.
+    // Na start, wymuś pokazanie panelu logowania
+    showPanel('panel-auth');
 });

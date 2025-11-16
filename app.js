@@ -196,8 +196,11 @@ document.addEventListener('DOMContentLoaded', () => {
             loggedUserEmailDisplay.textContent = currentUserEmail;
             currentUserIdDisplay.textContent = currentUserId;
 
+            // POPRAWKA 1: Pokaż przycisk Wyloguj, ukryj Formularz Logowania
             authForm.style.display = 'none';
-            logoutBtn.style.display = 'block';
+            // W HTMLu masz już przycisk Wyloguj w tym samym divie co Formularz, ale ma styl 'display: none', musimy go pokazać
+            logoutBtn.style.display = 'block'; 
+            
             bottomNav.style.display = 'flex';
             
             setupFirestoreListener(); // Rozpocznij subskrypcję danych
@@ -208,8 +211,11 @@ document.addEventListener('DOMContentLoaded', () => {
             currentAuthStatus.textContent = 'Status: Wylogowany. Zaloguj się, aby kontynuować.';
             loggedUserEmailDisplay.textContent = 'Wylogowany';
             currentUserIdDisplay.textContent = 'Brak ID';
+            
+            // Pokaż Formularz Logowania i ukryj przycisk Wyloguj
             authForm.style.display = 'block';
             logoutBtn.style.display = 'none';
+            
             bottomNav.style.display = 'none';
 
             if (masterTimerInterval) clearInterval(masterTimerInterval);
@@ -229,6 +235,11 @@ loginBtn.onclick = async () => {
     const password = document.getElementById('authPassword').value;
     authError.textContent = '';
     
+    // Sprawdzenie, czy przyciski login/register są bezpośrednio widoczne, jeśli są ukryte
+    // po prostu je ignorujemy
+    const isFormVisible = loginBtn.offsetParent !== null; 
+    if (!isFormVisible) return;
+
     if (!email || !password) { return authError.textContent = "Wprowadź e-mail i hasło."; }
     try {
         loginBtn.disabled = true;
@@ -257,6 +268,9 @@ registerBtn.onclick = async () => {
     const email = document.getElementById('authEmail').value;
     const password = document.getElementById('authPassword').value;
     authError.textContent = '';
+    
+    const isFormVisible = registerBtn.offsetParent !== null; 
+    if (!isFormVisible) return;
 
     if (!email || password.length < 6) { return authError.textContent = "E-mail jest wymagany, a hasło musi mieć min. 6 znaków."; }
 
@@ -283,16 +297,18 @@ registerBtn.onclick = async () => {
     }
 };
 
+// POPRAWKA 1: Uproszczona i czysta logika wylogowania
 logoutBtn.onclick = async () => {
     showConfirmModal("Czy na pewno chcesz się wylogować?", async () => {
-        // Anuluj wszelkie timery i subskrypcje przed wylogowaniem
+        // 1. Zakończ timery i subskrypcje
         if (masterTimerInterval) clearInterval(masterTimerInterval);
         if (restTimerInterval) clearInterval(restTimerInterval);
         if (firestoreUnsubscribe) firestoreUnsubscribe(); 
         
-        // POPRAWKA 1: Uproszczony warunek, aby wylogowanie zawsze działało
+        // 2. Wyloguj
         if (auth) {
             await signOut(auth);
+            showErrorModal("Wylogowano pomyślnie.", 'success');
         } else {
             // Awaryjne czyszczenie, jeśli auth nie działa (dla pewności, choć rzadko potrzebne)
             clearUserState();
@@ -325,8 +341,11 @@ function initAppUI() {
 
     // 2. Renderowanie UI
     updateWelcome();
-    applyTheme();
-    renderDayList();
+    applyTheme(); // Zastosowanie motywu
+    
+    // POPRAWKA 2: Renderowanie listy dni i logów ZAWSZE po zastosowaniu motywu.
+    // To naprawia problem z "niewidzialnymi" przyciskami przy ładowaniu
+    renderDayList(); 
     renderLogs();
 }
 

@@ -3,163 +3,166 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Trening Pro v5 🌐 (Cloud Sync)</title>
+<title>Trening Pro 💪</title>
 <link rel="stylesheet" href="style.css">
+<script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js"></script>
+<script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+  // Zmienne globalne z Canvas (dostarczane automatycznie)
+  const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+  const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : '';
+  const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+  // Inicjalizacja Firebase w HTML przed załadowaniem app.js
+  let app, auth, db;
+  if (Object.keys(firebaseConfig).length > 0) {
+    app = firebase.initializeApp(firebaseConfig);
+    auth = firebase.auth();
+    db = firebase.database();
+    
+    // Użycie tokena autoryzacji, jeśli jest dostępny
+    auth.onAuthStateChanged(user => {
+      if (!user && initialAuthToken) {
+        auth.signInWithCustomToken(initialAuthToken).catch(error => {
+          console.error("Firebase custom token sign-in failed:", error);
+        });
+      }
+    });
+  } else {
+    // Fallback dla środowisk bez konfiguracji Firebase
+    console.error("Firebase is not configured. Data persistence will be unavailable.");
+    window.auth = { onAuthStateChanged: (callback) => callback(null), signOut: async () => {} };
+    window.db = { ref: () => ({ once: async () => ({ val: () => null }), set: async () => {} }) };
+  }
+</script>
 </head>
 <body>
 
-<!-- 1. Biblioteki Firebase SDK (Stara wersja 8.x jest kompatybilna z CDN) -->
-<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
-<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
-<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
-
-<!-- 2. TWOJA UNIKALNA KONFIGURACJA ZAINICJALIZOWANA -->
-<script id="firebase-config">
-  // Twoje dane konfiguracyjne z Firebase Console:
-  const firebaseConfig = {
-    apiKey: "AIzaSyCacBxUhSiqaaCBrmVVKluMHMs3iMpR_cA",
-    authDomain: "pro-plan-e6f00.firebaseapp.com",
-    databaseURL: "https://pro-plan-e6f00-default-rtdb.europe-west1.firebasedatabase.app",
-    projectId: "pro-plan-e6f00",
-    storageBucket: "pro-plan-e6f00.firebasestorage.app",
-    messagingSenderId: "887703996706",
-    appId: "1:887703996706:web:a0f06602408f4307697d7b"
-  };
-
-  // Inicjalizacja Firebase
-  firebase.initializeApp(firebaseConfig);
-  const auth = firebase.auth();
-  const db = firebase.database();
-</script>
-
 <header class="top">
-  <h1>Trening Pro <span id="welcomeMsg"></span></h1>
-  <!-- Globalny timer sesji -->
-  <div id="masterTimerDisplay" class="master-timer">00:00:00</div>
+  <h1>Trening Pro<span id="welcomeMsg"></span></h1>
+  <div id="masterTimerDisplay" class="master-timer" style="display:none;">00:00:00</div>
 </header>
 
 <main class="container">
 
-  <!-- ============================================= -->
-  <!-- Panel Logowania/Rejestracji (NOWY PANEL AUTH) -->
-  <!-- ============================================= -->
+  <!-- Panel: Autoryzacja -->
   <section id="panel-auth" class="panel">
-    <h2>Zaloguj lub Zarejestruj 🔐</h2>
-    <div class="input-group">
-        <label for="authEmail">E-mail:</label>
-        <input id="authEmail" type="email" placeholder="E-mail" required />
-        <label for="authPassword">Hasło:</label>
-        <input id="authPassword" type="password" placeholder="Hasło (min. 6 znaków)" required />
+    <h2>Zaloguj/Zarejestruj 🔑</h2>
+    <p>Zaloguj się, aby Twoje plany i historia były zapisywane w chmurze.</p>
+    <div class="input-row">
+      <input id="authEmail" type="email" placeholder="E-mail" required />
+      <input id="authPassword" type="password" placeholder="Hasło (min. 6 znaków)" required />
     </div>
-
     <div class="button-row">
-        <button id="loginBtn" class="btn-success">Zaloguj</button>
-        <button id="registerBtn" class="btn-secondary">Zarejestruj</button>
+      <button id="loginBtn">Zaloguj</button>
+      <button id="registerBtn" class="btn-secondary">Zarejestruj</button>
     </div>
-    <p id="authError" style="color: var(--danger); margin-top: 15px;"></p>
+    <p id="authError" style="color: var(--danger); font-weight: bold; text-align: center;"></p>
+    <p id="loggedUserEmail" style="text-align: center; margin-top: 10px; font-weight: bold; color: var(--accent);"></p>
+    <button id="logoutBtn" class="btn-danger" style="margin-top: 20px;">Wyloguj się</button>
   </section>
 
-  <!-- ============================================= -->
-  <!-- Panel Główny (Lista Dni Tygodnia) -->
-  <!-- ============================================= -->
+  <!-- Panel: Główny (Lista dni) -->
   <section id="panel-main" class="panel">
-    <h2>Plany Treningowe</h2>
+    <h2>Plany Treningowe 📅</h2>
     <div id="dayList" class="day-list">
-      <!-- Dni tygodnia będą wstrzyknięte przez JS -->
+      <!-- Tutaj wylądują przyciski dni tygodnia generowane przez JS -->
     </div>
   </section>
-
-  <!-- ============================================= -->
-  <!-- Panel Podglądu Planu (Detale) -->
-  <!-- ============================================= -->
+  
+  <!-- Panel: Szczegóły Planu (Day Details) -->
   <section id="panel-plan-details" class="panel">
-    <h2 id="planDetailsTitle">Plan: ...</h2>
+    <h2 id="planDetailsTitle">Plan: Poniedziałek</h2>
     <div id="planDetailsList" class="exercise-list">
-      <!-- Lista ćwiczeń z planu będzie tutaj -->
+      <!-- Lista ćwiczeń w planie -->
     </div>
-    <div class="button-row">
-      <button id="backToMainBtn" class="btn-secondary">Wróć</button>
-      <button id="editPlanBtn">Edytuj Plan</button>
-      <button id="startWorkoutBtn" class="btn-success">Zacznij Trening</button>
+    <div class="button-row" style="margin-top: 20px;">
+      <button id="editPlanBtn" class="btn-secondary">Edytuj plan</button>
+      <button id="startWorkoutBtn" class="btn-success">Rozpocznij trening</button>
     </div>
+    <button id="backToMainBtn" class="btn-secondary" style="margin-top: 10px; width: 100%;">Powrót do listy dni</button>
   </section>
 
-  <!-- ============================================= -->
-  <!-- Panel Edycji Planu -->
-  <!-- ============================================= -->
+  <!-- Panel: Edytor Planu -->
   <section id="panel-edit-plan" class="panel">
-    <h2 id="editPlanTitle">Edytuj: ...</h2>
-    <div class="input-row edit-form">
-      <input id="exName" placeholder="Nazwa ćwiczenia" />
-      <input id="exTargetSets" type="number" min="1" placeholder="Serie (cel)" />
-      <input id="exTargetReps" type="number" min="1" placeholder="Powt. (cel)" />
-      <button id="addExerciseBtn">Dodaj</button>
+    <h2 id="editPlanTitle">Edytuj: Dzień</h2>
+    
+    <h3>Dodaj Ćwiczenie</h3>
+    <div class="input-row">
+      <input id="exName" placeholder="Nazwa ćwiczenia (np. Przysiady)" required />
+      <input id="exTargetSets" type="number" min="1" value="3" placeholder="Serie" required style="flex: 0 0 80px;" />
+      <input id="exTargetReps" type="number" min="1" value="10" placeholder="Powt." required style="flex: 0 0 80px;" />
+      <button id="addExerciseBtn" style="flex: 0 0 80px;">Dodaj</button>
     </div>
+    
+    <h3>Ćwiczenia w Planie</h3>
     <div id="editPlanList" class="exercise-list">
-      <!-- Lista ćwiczeń do edycji (z przyciskami 'Usuń') -->
+      <!-- Lista ćwiczeń do edycji -->
     </div>
-    <div class="button-row">
-      <button id="savePlanChangesBtn" class="btn-secondary">Zapisz i Wróć</button>
+
+    <div class="button-row" style="margin-top: 20px;">
+      <button id="savePlanChangesBtn" class="btn-success">Zapisz zmiany i wróć</button>
     </div>
   </section>
 
-  <!-- ============================================= -->
-  <!-- Panel Aktywnego Treningu (Sesja) -->
-  <!-- ============================================= -->
+  <!-- Panel: Aktywny Trening -->
   <section id="panel-active-workout" class="panel">
-    <h2 id="activeWorkoutTitle">Trening: ...</h2>
-    <div id="activeWorkoutList" class="workout-list-container">
-      <!-- Karty ćwiczeń do logowania serii będą tutaj -->
+    <h2 id="activeWorkoutTitle">Aktywny Trening</h2>
+    <div id="activeWorkoutList" class="exercise-list">
+      <!-- Dynamiczna lista ćwiczeń z formularzem logowania serii -->
     </div>
-    <button id="finishWorkoutBtn" class="btn-danger">Zakończ i Zapisz Trening</button>
+    
+    <button id="finishWorkoutBtn" class="btn-danger" style="margin-top: 20px; width: 100%;">Zakończ Trening i Zapisz Log</button>
   </section>
 
 
-  <!-- ============================================= -->
-  <!-- Panel: Historia -->
-  <!-- ============================================= -->
-  <section id="panel-history" class="panel">
-    <h2>Historia i logi 📜</h2>
-    <div id="logArea" class="log-area"></div>
-    <div class="input-row action-row">
-      <button id="clearHistory" class="btn-secondary">Wyczyść</button>
-      <button id="exportBtn">Eksport JSON</button>
-      <button id="importBtn">Import JSON</button>
+  <!-- Panel: Logi (Historia) -->
+  <section id="panel-logs" class="panel">
+    <h2>Historia Logów 📜</h2>
+    <div id="logArea" class="log-area">
+      <!-- Logi treningowe -->
+    </div>
+    
+    <div class="button-row" style="margin-top: 20px;">
+      <button id="clearHistory" class="btn-danger">Wyczyść historię</button>
+      <button id="exportBtn">Eksportuj JSON</button>
+      <button id="importBtn" class="btn-secondary">Importuj JSON</button>
       <input type="file" id="fileInput" style="display:none" accept=".json">
     </div>
   </section>
 
-  <!-- ============================================= -->
   <!-- Panel: Statystyki -->
-  <!-- ============================================= -->
   <section id="panel-stats" class="panel">
     <h2>Statystyki 📈</h2>
-    <canvas id="statsChart" height="200"></canvas>
+    <canvas id="statsChart" height="250"></canvas>
+    <p style="text-align: center; color: var(--muted); margin-top: 10px;">Objętość treningowa (kg * powtórzenia) w czasie.</p>
   </section>
 
-  <!-- ============================================= -->
   <!-- Panel: Ustawienia -->
-  <!-- ============================================= -->
   <section id="panel-settings" class="panel">
     <h2>Ustawienia ⚙️</h2>
-    <p>Aktualnie zalogowany: <strong id="loggedUserEmail"></strong></p>
-    <label for="themeSelect">Motyw:</label>
+    
+    <label for="loggedUserEmail" style="font-size: 0.9em; margin-bottom: 5px;">Zalogowany jako:</label>
+    <p id="loggedUserEmail" style="font-weight: bold; margin-bottom: 20px; color: var(--accent);"></p>
+
+    <label for="themeSelect">Motyw aplikacji:</label>
     <select id="themeSelect">
-      <option value="light">Jasny</option>
+      <option value="light">Jasny (domyślny)</option>
       <option value="dark">Ciemny</option>
     </select>
-    <button id="logoutBtn" class="btn-danger">Wyloguj i Zmień Konto</button>
   </section>
 
 </main>
 
-<!-- Dolne menu -->
+<!-- Dolne menu nawigacyjne -->
 <nav class="bottom-nav">
-  <button data-panel="panel-main">🏋️‍♂️ Plany</button>
-  <button data-panel="panel-history">📜 Historia</button>
-  <button data-panel="panel-stats">📈 Statystyki</button>
-  <button data-panel="panel-settings">⚙️ Ustawienia</button>
+  <button data-panel="panel-main">Plan</button>
+  <button data-panel="panel-logs">Logi</button>
+  <button data-panel="panel-stats">Statystyki</button>
+  <button data-panel="panel-settings">Ustawienia</button>
+  <button data-panel="panel-auth">Konto</button>
 </nav>
 
 <script src="app.js"></script>

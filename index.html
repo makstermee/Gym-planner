@@ -11,7 +11,7 @@
 
 <script type="module">
   
-  // --- Twoja Własna Konfiguracja Firebase ---
+  // --- Twoja Własna Konfiguracja Firebase (wklejona na stałe) ---
   const firebaseConfig = {
     apiKey: "AIzaSyCacBxUhSiqaaCBrmVVKluMHMs3iMpR_cA",
     authDomain: "pro-plan-e6f00.firebaseapp.com",
@@ -41,7 +41,6 @@
     window.app = initializeApp(firebaseConfig);
     window.auth = getAuth(window.app);
     window.db = getFirestore(window.app);
-    // setLogLevel('debug'); // Możesz odkomentować to do debugowania, ale domyślnie jest wyłączone
 
     console.log("Firebase configured and initialized with Firestore.");
 

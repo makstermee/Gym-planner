@@ -1,8 +1,8 @@
-// KLUCZ DO LOCAL STORAGE - Utrzymany jako v3
-const STORAGE_KEY = 'trening_pro_v3';
+// Konfiguracja Firebase jest w index.html (zmienne auth i db są globalne).
 
-// --- Struktury Danych ---
-const defaultUserData = {
+// --- Struktury Danych i Stany ---
+
+const defaultUserState = {
   "theme": "light",
   "plans": {
     "Poniedziałek": [], "Wtorek": [], "Środa": [],
@@ -13,33 +13,16 @@ const defaultUserData = {
     "isActive": false,
     "dayName": null,
     "startTime": null,
-    "totalTimerInterval": null,
     "exercises": []
-  },
-  "restTimer": {
-    "interval": null, 
-    "displayElement": null,
-    "secondsLeft": 0
   }
 };
 
-const defaultState = {
-  "currentUser": null, // ID aktualnie zalogowanego użytkownika
-  "users": [], // Lista obiektów { id: '...', username: '...', data: defaultUserData }
-};
-
-let globalState = JSON.parse(localStorage.getItem(STORAGE_KEY) || JSON.stringify(defaultState));
-// Weryfikacja i naprawa stanu
-if (!globalState.users || !Array.isArray(globalState.users)) {
-  globalState = defaultState;
-  // Usuń stary, uszkodzony klucz
-  localStorage.removeItem('trening_pro_v2'); 
-  saveState();
-}
-
-// Skrót do aktualnie aktywnych danych (zwraca defaultUserData jeśli nikt nie jest zalogowany)
-let state = globalState.currentUser ? globalState.users.find(u => u.id === globalState.currentUser)?.data || defaultUserData : defaultUserData;
-
+let state = JSON.parse(JSON.stringify(defaultUserState)); // Aktualny stan użytkownika
+let currentUserId = null;
+let currentUserEmail = null;
+let masterTimerInterval = null; // Interwał globalnego timera
+let restTimerInterval = null; // Interwał timera odpoczynku
+let currentRestDisplay = null; // Element DOM timera odpoczynku
 
 // --- Zmienne globalne DOM ---
 const panels = document.querySelectorAll('.panel');
@@ -47,109 +30,215 @@ const welcomeMsg = document.getElementById('welcomeMsg');
 const dayList = document.getElementById('dayList');
 const logArea = document.getElementById('logArea');
 const masterTimerDisplay = document.getElementById('masterTimerDisplay');
+const authError = document.getElementById('authError');
 let statsChart = null;
 let currentDay = null;
 
-// --- System Zapisywania Danych (Multi-User) ---
+// --- Obsługa Bazy Danych (Firebase) ---
 
-function saveState() {
-  if (globalState.currentUser) {
-    const userIndex = globalState.users.findIndex(u => u.id === globalState.currentUser);
-    if (userIndex !== -1) {
-      // Wyczyść interwały przed zapisem (nie mogą być serializowane)
-      const dataToSave = JSON.parse(JSON.stringify(state)); 
-      if (dataToSave.activeWorkout) dataToSave.activeWorkout.totalTimerInterval = null;
-      if (dataToSave.restTimer) {
-        dataToSave.restTimer.interval = null;
-        dataToSave.restTimer.displayElement = null;
-      }
-      globalState.users[userIndex].data = dataToSave;
+/** Zwraca referencję do danych zalogowanego użytkownika w bazie Firebase. */
+function getDbRef() {
+    if (!currentUserId) return null;
+    // Ścieżka: users/[UID_Użytkownika]/data
+    // Używamy ścieżki "data" aby przechowywać wszystkie dane stanu pod jednym kluczem
+    return db.ref('users/' + currentUserId + '/data');
+}
+
+/** * Zapisuje aktualny stan 'state' do Firebase. 
+ * Używamy db.ref().set() zamiast update, aby nadpisać cały obiekt stanu.
+ */
+async function saveState() {
+    const dbRef = getDbRef();
+    if (!dbRef) {
+        console.error("Błąd: Brak referencji do bazy danych. Użytkownik niezalogowany.");
+        return;
     }
-  }
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(globalState));
+
+    // Klonowanie stanu
+    const stateToSave = JSON.parse(JSON.stringify(state)); 
+
+    try {
+        await dbRef.set(stateToSave);
+    } catch (error) {
+        console.error("Błąd zapisu danych do Firebase:", error);
+        // W produkcyjnej aplikacji można by pokazać modal z błędem zapisu
+    }
 }
 
-// --- Logowanie i Użytkownicy (REQ 2) ---
+/** * Wczytuje stan z Firebase po zalogowaniu i inicjuje aplikację. 
+ */
+async function loadState(userId, email) {
+    currentUserId = userId;
+    currentUserEmail = email;
+    const dbRef = getDbRef();
+    if (!dbRef) return;
 
-function generateUserId() { return 'user_' + Date.now(); }
+    try {
+        const snapshot = await dbRef.once('value');
+        const userData = snapshot.val();
+        
+        if (userData) {
+            // Użyj wczytanych danych
+            state = userData;
+        } else {
+            // Pierwsze logowanie - ustaw domyślny stan i zapisz go
+            state = JSON.parse(JSON.stringify(defaultUserState));
+            await saveState(); 
+        }
 
-function renderUserList() {
-  const userList = document.getElementById('userList');
-  userList.innerHTML = '';
-  
-  if (globalState.users.length === 0) {
-    userList.innerHTML = '<p style="color:var(--muted)">Brak kont. Utwórz nowe, by zacząć.</p>';
-  }
-
-  globalState.users.forEach(user => {
-    const isActive = user.id === globalState.currentUser;
-    const item = document.createElement('div');
-    item.className = `user-item ${isActive ? 'active' : ''}`;
-    item.innerHTML = `
-      <span class="username-display">${user.username}</span>
-      <div class="user-actions">
-        <button class="btn-secondary" onclick="loginUser('${user.id}')" ${isActive ? 'disabled' : ''}>Wybierz</button>
-        <button class="btn-danger btn-delete" onclick="deleteUser('${user.id}')">Usuń</button>
-      </div>
-    `;
-    userList.appendChild(item);
-  });
+        // Kontynuuj inicjalizację aplikacji po wczytaniu danych
+        initAppUI();
+    } catch (error) {
+        console.error("Błąd wczytywania danych z Firebase:", error);
+        // Jeśli błąd wczytywania, nie wylogowujemy, ale używamy domyślnego stanu
+        initAppUI(); 
+    }
 }
 
-function loginUser(userId) {
-  globalState.currentUser = userId;
-  const user = globalState.users.find(u => u.id === userId);
-  state = user.data; // Ustaw stan na dane nowego użytkownika
-  saveState();
-  initApp(true); // Ponowne uruchomienie aplikacji
+// --- Autoryzacja i Logowanie (Firebase Auth) ---
+
+document.getElementById('loginBtn').onclick = async () => {
+    const email = document.getElementById('authEmail').value;
+    const password = document.getElementById('authPassword').value;
+    authError.textContent = '';
+    
+    if (!email || !password) {
+        return authError.textContent = "Wprowadź e-mail i hasło.";
+    }
+
+    try {
+        document.getElementById('loginBtn').disabled = true;
+        const userCredential = await auth.signInWithEmailAndPassword(email, password);
+        // Listener onAuthStateChanged przejmie kontrolę
+    } catch (error) {
+        let message = "Wystąpił błąd logowania.";
+        if (error.code === 'auth/user-not-found') {
+            message = "Brak konta z tym e-mailem. Zarejestruj się.";
+        } else if (error.code === 'auth/wrong-password') {
+            message = "Nieprawidłowe hasło.";
+        } else if (error.code === 'auth/too-many-requests') {
+            message = "Zbyt wiele prób. Spróbuj później.";
+        } else {
+             message = `Błąd: ${error.message}`;
+        }
+        authError.textContent = message;
+    } finally {
+        document.getElementById('loginBtn').disabled = false;
+    }
+};
+
+document.getElementById('registerBtn').onclick = async () => {
+    const email = document.getElementById('authEmail').value;
+    const password = document.getElementById('authPassword').value;
+    authError.textContent = '';
+
+    if (!email || password.length < 6) {
+        return authError.textContent = "E-mail jest wymagany, a hasło musi mieć min. 6 znaków.";
+    }
+
+    try {
+        document.getElementById('registerBtn').disabled = true;
+        // Rejestracja i automatyczne logowanie
+        const userCredential = await auth.createUserWithEmailAndPassword(email, password);
+        // Listener onAuthStateChanged przejmie kontrolę
+    } catch (error) {
+        let message = "Błąd rejestracji.";
+        if (error.code === 'auth/email-already-in-use') {
+            message = "Ten e-mail jest już zajęty. Spróbuj się zalogować.";
+        } else if (error.code === 'auth/weak-password') {
+             message = "Hasło jest za słabe (min. 6 znaków).";
+        } else {
+             message = `Błąd: ${error.message}`;
+        }
+        authError.textContent = message;
+    } finally {
+         document.getElementById('registerBtn').disabled = false;
+    }
+};
+
+document.getElementById('logoutBtn').onclick = async () => {
+    if (confirm("Czy na pewno chcesz się wylogować?")) {
+        // Zakończenie timerów
+        if (masterTimerInterval) clearInterval(masterTimerInterval);
+        if (restTimerInterval) clearInterval(restTimerInterval);
+        
+        masterTimerDisplay.style.display = 'none';
+        
+        await auth.signOut();
+    }
+};
+
+// --- Główny Listener Firebase (Uruchomienie Aplikacji) ---
+
+auth.onAuthStateChanged(user => {
+    if (user) {
+        // Użytkownik ZALOGOWANY
+        document.getElementById('loggedUserEmail').textContent = user.email;
+        document.getElementById('authEmail').value = ''; // Wyczyść formularz
+        document.getElementById('authPassword').value = ''; 
+        loadState(user.uid, user.email);
+    } else {
+        // Użytkownik WYLOWOGANY
+        currentUserId = null;
+        currentUserEmail = null;
+        state = JSON.parse(JSON.stringify(defaultUserState)); // Wyczyść stan lokalny
+        showPanel('panel-auth'); // Pokaż panel logowania
+        updateWelcome();
+        // Wyłącz timer, jeśli został
+        if (masterTimerInterval) clearInterval(masterTimerInterval);
+        if (restTimerInterval) clearInterval(restTimerInterval);
+    }
+});
+
+// --- Funkcja inicjalizująca interfejs (po zalogowaniu) ---
+
+function initAppUI() {
+    // 1. Sprawdzenie wznowienia treningu
+    if (state.activeWorkout.isActive) {
+        // Upewnij się, że stary interwał nie działa
+        if (masterTimerInterval) clearInterval(masterTimerInterval); 
+        
+        if (confirm("Wykryto niezakończony trening. Chcesz go wznowić?")) {
+            masterTimerInterval = setInterval(updateMasterTimer, 1000);
+            masterTimerDisplay.style.display = 'block';
+            renderActiveWorkout();
+            showPanel('panel-active-workout');
+        } else {
+            // Anuluj trening (zresetuj, zapisz do chmury i zacznij normalnie)
+            state.activeWorkout = defaultUserState.activeWorkout;
+            saveState(); 
+            showPanel('panel-main');
+        }
+    } else {
+        showPanel('panel-main');
+    }
+
+    // 2. Renderowanie UI
+    updateWelcome();
+    applyTheme();
+    renderDayList();
+    renderLogs();
+    // Chart zostanie zainicjowany przy pierwszym wejściu do panel-stats
 }
 
-function registerUser() {
-  const username = document.getElementById('newUsername').value.trim();
-  if (!username) { return alert('Wprowadź nazwę użytkownika.'); }
-  if (globalState.users.some(u => u.username === username)) { return alert('Użytkownik o tej nazwie już istnieje.'); }
-
-  const newUser = {
-    id: generateUserId(),
-    username: username,
-    data: JSON.parse(JSON.stringify(defaultUserData)) // Głęboka kopia
-  };
-
-  globalState.users.push(newUser);
-  document.getElementById('newUsername').value = '';
-  loginUser(newUser.id);
-  renderUserList();
-}
-
-function deleteUser(userId) {
-  if (globalState.currentUser === userId) { return alert('Nie możesz usunąć aktualnie zalogowanego konta. Najpierw przełącz się na inne.'); }
-  if (confirm(`Czy na pewno chcesz usunąć konto użytkownika "${globalState.users.find(u => u.id === userId).username}" i wszystkie jego dane?`)) {
-    globalState.users = globalState.users.filter(u => u.id !== userId);
-    saveState();
-    renderUserList();
-  }
-}
-
-document.getElementById('changeUser').onclick = () => showPanel('panel-login');
-document.getElementById('resetData').onclick = () => {
-  if (confirm('UWAGA: Spowoduje to usunięcie WSZYSTKICH DANYCH (wszystkich użytkowników, planów i historii) z przeglądarki. Czy kontynuować?')) {
-    localStorage.removeItem(STORAGE_KEY);
-    location.reload();
-  }
-}
-
-
-// --- Główny System Nawigacji ---
+// --- Nawigacja ---
 
 function showPanel(panelId) {
-  // Wymuś logowanie, jeśli nikt nie jest zalogowany
-  if (!globalState.currentUser && panelId !== 'panel-login') {
-    return showPanel('panel-login');
+  // Wymuś logowanie, jeśli panel nie jest panelem autoryzacji
+  if (!currentUserId && panelId !== 'panel-auth') {
+    return showPanel('panel-auth');
   }
 
-  // Jeśli trening jest aktywny, wymuś pozostanie w panelu treningu
+  // Wymuś pozostanie w aktywnym treningu
   if (state.activeWorkout.isActive && panelId !== 'panel-active-workout') {
-    return alert("Najpierw zakończ aktywny trening!");
+    // Używamy własnego komunikatu zamiast alert(), aby nie blokować iframa
+    const modal = document.createElement('div');
+    modal.className = 'modal-message';
+    modal.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);padding:20px;background:white;border-radius:10px;box-shadow:0 0 20px rgba(0,0,0,0.5);z-index:100;';
+    modal.innerHTML = '<strong>Najpierw zakończ aktywny trening!</strong>';
+    document.body.appendChild(modal);
+    setTimeout(() => modal.remove(), 2000);
+    return;
   }
   
   panels.forEach(p => p.classList.remove('active'));
@@ -168,43 +257,29 @@ document.querySelectorAll('.bottom-nav button').forEach(btn => {
 document.getElementById('backToMainBtn').onclick = () => showPanel('panel-main');
 document.getElementById('savePlanChangesBtn').onclick = () => {
   saveState();
-  renderDayList(); // Aktualizacja liczby ćwiczeń na głównej liście
+  renderDayList();
   showPlanDetails(currentDay);
 };
 
+
 // --- Ustawienia i Motyw ---
 
-const usernameInput = document.getElementById('username');
 function updateWelcome() {
-  const user = globalState.users.find(u => u.id === globalState.currentUser);
-  if (user) {
-     usernameInput.value = user.username;
-     welcomeMsg.textContent = `, ${user.username}!`;
-  } else {
-     usernameInput.value = '';
-     welcomeMsg.textContent = '';
-  }
-}
-
-usernameInput.onchange = e => { 
-    const user = globalState.users.find(u => u.id === globalState.currentUser);
-    if (user) {
-        user.username = e.target.value;
-        saveState(); 
-        updateWelcome(); 
-        renderUserList();
-    }
+    // Wyświetla imię użytkownika (część e-maila przed @) lub nic
+    welcomeMsg.textContent = currentUserEmail ? `, ${currentUserEmail.split('@')[0]}!` : '';
 }
 
 const themeSelect = document.getElementById('themeSelect');
 function applyTheme() { 
-  if (globalState.currentUser) {
-    document.body.classList.toggle('dark', state.theme === 'dark'); 
-    themeSelect.value = state.theme;
-  }
+  document.body.classList.toggle('dark', state.theme === 'dark'); 
+  themeSelect.value = state.theme;
 }
-themeSelect.onchange = e => { state.theme = e.target.value; applyTheme(); saveState(); }
 
+themeSelect.onchange = e => { 
+    state.theme = e.target.value; 
+    applyTheme(); 
+    saveState(); 
+}
 
 // --- Logika Planów Treningowych ---
 
@@ -298,11 +373,12 @@ function renderEditPlanList() {
   });
 }
 
-// --- Logika Aktywnego Treningu (REQ 3, 4, 5) ---
+// --- Logika Aktywnego Treningu ---
 
 function startWorkout(dayName) {
   if (state.plans[dayName].length === 0) {
-    return alert("Ten plan jest pusty. Najpierw dodaj ćwiczenia, aby zacząć.");
+    alert("Ten plan jest pusty. Najpierw dodaj ćwiczenia, aby zacząć.");
+    return;
   }
 
   if (!confirm(`Rozpocząć trening: ${dayName}?`)) return;
@@ -316,8 +392,8 @@ function startWorkout(dayName) {
   }));
 
   // Wystartuj główny timer
-  clearInterval(state.activeWorkout.totalTimerInterval);
-  state.activeWorkout.totalTimerInterval = setInterval(updateMasterTimer, 1000);
+  if (masterTimerInterval) clearInterval(masterTimerInterval);
+  masterTimerInterval = setInterval(updateMasterTimer, 1000);
   
   masterTimerDisplay.style.display = 'block';
   updateMasterTimer();
@@ -335,7 +411,6 @@ function renderActiveWorkout() {
     const card = document.createElement('div');
     card.className = 'workout-card';
 
-    // Lista zalogowanych serii
     let setsHTML = ex.loggedSets.map((set, setIndex) => `
       <div class="logged-set" data-set-index="${setIndex}">
         <span class="set-number">Seria ${setIndex + 1}:</span>
@@ -344,7 +419,6 @@ function renderActiveWorkout() {
       </div>
     `).join('');
 
-    // Domyślna wartość ciężaru to ostatni użyty ciężar
     const lastWeight = ex.loggedSets.slice(-1)[0]?.weight || '';
 
     card.innerHTML = `
@@ -369,17 +443,20 @@ function renderActiveWorkout() {
     list.appendChild(card);
   });
 
-  // Ustawienie event listenerów
   list.querySelectorAll('.log-set-form').forEach(form => {
     form.onsubmit = (e) => {
       e.preventDefault();
       const exIndex = e.target.dataset.exIndex;
-      const weight = e.target.querySelector('.log-weight').value;
-      const reps = e.target.querySelector('.log-reps').value;
+      const weightInput = e.target.querySelector('.log-weight');
+      const repsInput = e.target.querySelector('.log-reps');
+      
+      const weight = weightInput.value;
+      const reps = repsInput.value;
+      
       if (weight && reps && +weight >= 0 && +reps >= 1) {
         logSet(exIndex, +weight, +reps);
-        e.target.querySelector('.log-reps').value = '';
-        startRestTimer(exIndex, 60); // Auto-start 60s przerwy po zapisie
+        repsInput.value = ''; // Wyczyść tylko pole powtórzeń
+        startRestTimer(exIndex, 60); // Standardowy timer 60s
       } else {
         alert('Podaj poprawne wartości dla ciężaru (min. 0) i powtórzeń (min. 1).');
       }
@@ -414,40 +491,45 @@ function removeSet(exIndex, setIndex) {
 }
 
 function startRestTimer(exIndex, seconds) {
-  if (state.restTimer.interval) {
-    clearInterval(state.restTimer.interval);
-    if (state.restTimer.displayElement) {
-       state.restTimer.displayElement.style.color = 'var(--accent)';
+  // 1. Zakończ poprzedni interwał
+  if (restTimerInterval) {
+    clearInterval(restTimerInterval);
+    if (currentRestDisplay) {
+       currentRestDisplay.style.color = 'var(--accent)'; // Reset koloru starego timera
     }
   }
 
+  // 2. Ustaw nowy timer
   const displayElement = document.getElementById(`rest-timer-${exIndex}`);
-  state.restTimer.displayElement = displayElement;
-  state.restTimer.secondsLeft = seconds;
-  displayElement.style.color = 'var(--danger)';
+  currentRestDisplay = displayElement;
+  let secondsLeft = seconds;
+  displayElement.style.color = 'var(--danger)'; // Kolor czerwony podczas odliczania
 
   const updateDisplay = () => {
-    const mins = Math.floor(state.restTimer.secondsLeft / 60).toString().padStart(2, '0');
-    const secs = (state.restTimer.secondsLeft % 60).toString().padStart(2, '0');
+    const mins = Math.floor(secondsLeft / 60).toString().padStart(2, '0');
+    const secs = (secondsLeft % 60).toString().padStart(2, '0');
     displayElement.textContent = `${mins}:${secs}`;
   };
   updateDisplay();
 
-  state.restTimer.interval = setInterval(() => {
-    state.restTimer.secondsLeft--;
+  restTimerInterval = setInterval(() => {
+    secondsLeft--;
     updateDisplay();
 
-    if (state.restTimer.secondsLeft <= 0) {
-      clearInterval(state.restTimer.interval);
-      state.restTimer.interval = null;
+    if (secondsLeft <= 0) {
+      clearInterval(restTimerInterval);
+      restTimerInterval = null;
       displayElement.textContent = "START!";
-      displayElement.style.color = 'var(--success)';
+      displayElement.style.color = 'var(--success)'; // Kolor zielony po zakończeniu
     }
   }, 1000);
 }
 
 function updateMasterTimer() {
-  if (!state.activeWorkout.isActive) return;
+  if (!state.activeWorkout.isActive || !state.activeWorkout.startTime) {
+    if (masterTimerInterval) clearInterval(masterTimerInterval);
+    return;
+  }
   
   const elapsedMs = Date.now() - state.activeWorkout.startTime;
   const hours = Math.floor(elapsedMs / 3600000).toString().padStart(2, '0');
@@ -461,8 +543,8 @@ document.getElementById('finishWorkoutBtn').onclick = () => {
   if (!confirm('Zakończyć i zapisać ten trening?')) return;
 
   // 1. Zakończenie timerów
-  clearInterval(state.activeWorkout.totalTimerInterval);
-  if (state.restTimer.interval) clearInterval(state.restTimer.interval);
+  if (masterTimerInterval) clearInterval(masterTimerInterval);
+  if (restTimerInterval) clearInterval(restTimerInterval);
   
   const finalDuration = masterTimerDisplay.textContent;
   masterTimerDisplay.style.display = 'none';
@@ -477,8 +559,7 @@ document.getElementById('finishWorkoutBtn').onclick = () => {
   state.logs.push(logEntry);
 
   // 3. Zresetuj stan aktywnego treningu
-  state.activeWorkout = defaultUserData.activeWorkout;
-  state.restTimer = defaultUserData.restTimer;
+  state.activeWorkout = defaultUserState.activeWorkout;
 
   saveState();
   renderLogs();
@@ -486,15 +567,16 @@ document.getElementById('finishWorkoutBtn').onclick = () => {
   showPanel('panel-main');
 };
 
-// --- Historia i Logi (REQ 1 - Szczegółowe Serie) ---
+// --- Historia i Logi ---
 
 function renderLogs() {
   logArea.innerHTML = '';
   if (state.logs.length === 0) {
-     logArea.innerHTML = '<p style="color:var(--muted)">Brak zapisanych treningów w historii dla tego użytkownika.</p>';
+     logArea.innerHTML = '<p style="color:var(--muted)">Brak zapisanych treningów w historii.</p>';
      return;
   }
   
+  // Odwracanie kolejności, aby najnowsze były na górze
   state.logs.slice().reverse().forEach((log) => {
     const div = document.createElement('div');
     div.className = 'card log-summary-card';
@@ -525,7 +607,7 @@ function renderLogs() {
     logArea.appendChild(div);
   });
   
-  // Logika rozwijania/zwijania
+  // Obsługa rozwijania szczegółów
   document.querySelectorAll('.log-summary-card').forEach(card => {
     card.querySelector('.log-header').onclick = () => {
       const details = card.querySelector('.log-details-hidden');
@@ -538,33 +620,42 @@ function renderLogs() {
   });
 }
 
-// --- Import/Eksport ---
+// --- Import/Eksport i czyszczenie danych ---
+
 document.getElementById('exportBtn').onclick = () => {
+  if (!state.logs || state.logs.length === 0) return alert('Brak danych do eksportu.');
   const blob = new Blob([JSON.stringify(state.logs)], { type: 'application/json' });
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-  a.download = `${globalState.users.find(u => u.id === globalState.currentUser)?.username || 'user'}_trening_logs_v4.json`; a.click();
+  a.download = `${currentUserEmail.split('@')[0]}_trening_logs_v5.json`; a.click();
 }
 document.getElementById('importBtn').onclick = () => document.getElementById('fileInput').click();
 document.getElementById('fileInput').onchange = e => {
   const file = e.target.files[0]; if (!file) return;
   const reader = new FileReader();
-  reader.onload = () => {
+  reader.onload = async () => {
     try {
       const importedLogs = JSON.parse(reader.result);
       if (Array.isArray(importedLogs)) {
-        state.logs = importedLogs; saveState(); renderLogs(); alert('Zaimportowano dane.');
+        state.logs = importedLogs; 
+        await saveState(); // Zapisz zaimportowane dane do chmury
+        renderLogs(); 
+        alert('Zaimportowano dane do chmury.');
+        updateStatsChart();
       } else { alert('Nieprawidłowy format pliku JSON.'); }
     } catch (err) { alert('Błąd podczas odczytu pliku: ' + err.message); }
   }
   reader.readAsText(file);
 }
 document.getElementById('clearHistory').onclick = () => {
-  if (confirm('Wyczyścić całą historię treningów dla bieżącego użytkownika?')) {
-    state.logs = []; saveState(); renderLogs(); updateStatsChart();
+  if (confirm('Wyczyścić całą historię treningów dla Twojego konta? Dane te zostaną usunięte z chmury!')) {
+    state.logs = []; 
+    saveState(); 
+    renderLogs(); 
+    updateStatsChart();
   }
 }
 
-// --- Statystyki (Wykres) ---
+// --- Statystyki ---
 function initStatsChart() {
   const ctx = document.getElementById('statsChart').getContext('2d');
   statsChart = new Chart(ctx, {
@@ -580,6 +671,7 @@ function updateStatsChart() {
   const volumeByDate = state.logs.reduce((acc, log) => {
     const date = log.date;
     
+    // Obliczanie objętości (ciężar * powtórzenia) dla wszystkich serii w treningu
     const totalVolume = log.exercises.reduce((exAcc, ex) => {
       const exerciseVolume = ex.loggedSets.reduce((setAcc, set) => {
         return setAcc + (set.weight * set.reps);
@@ -594,55 +686,15 @@ function updateStatsChart() {
     return acc;
   }, {});
 
+  // Sortowanie dat i przygotowanie danych do wykresu
   const sortedDates = Object.keys(volumeByDate).sort();
   statsChart.data.labels = sortedDates;
   statsChart.data.datasets[0].data = sortedDates.map(date => volumeByDate[date]);
   statsChart.update();
 }
 
-// --- Funkcja startowa ---
-function initApp(isReload = false) {
-  // Jeśli nikt nie jest zalogowany
-  if (!globalState.currentUser) {
-    renderUserList();
-    applyTheme(); // Ustawienia motywu (domyślnie jasny)
-    return showPanel('panel-login');
-  } 
-
-  // Użytkownik jest zalogowany
-  const user = globalState.users.find(u => u.id === globalState.currentUser);
-  state = user.data;
-  
-  // Wyczyść ewentualne pozostałe interwały JS
-  if (state.activeWorkout.totalTimerInterval) clearInterval(state.activeWorkout.totalTimerInterval);
-  if (state.restTimer.interval) clearInterval(state.restTimer.interval);
-
-  // Sprawdzenie wznowienia treningu
-  if (state.activeWorkout.isActive) {
-    if (confirm("Wykryto niezakończony trening. Chcesz go wznowić?")) {
-      state.activeWorkout.totalTimerInterval = setInterval(updateMasterTimer, 1000);
-      masterTimerDisplay.style.display = 'block';
-      renderActiveWorkout();
-      showPanel('panel-active-workout');
-    } else {
-      state.activeWorkout = defaultUserData.activeWorkout;
-      state.restTimer = defaultUserData.restTimer;
-      saveState();
-      showPanel('panel-main');
-    }
-  } else {
-    showPanel('panel-main');
-  }
-
-  updateWelcome();
-  applyTheme();
-  renderDayList();
-  renderLogs();
-}
-
 // --- Start Aplikacji ---
 document.addEventListener('DOMContentLoaded', () => {
-    document.getElementById('registerUserBtn').onclick = registerUser;
-    
-    initApp();
+    // Aplikacja czeka na sygnał od Firebase auth.onAuthStateChanged
+    // Początkowo pokaże się tylko panel logowania, dopóki użytkownik się nie zaloguje.
 });

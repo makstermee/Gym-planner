@@ -9,18 +9,17 @@
 </head>
 <body>
 <script type="module">
-  // Import the functions you need from the SDKs you need
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-app.js";
-  import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-analytics.js";
-  // TODO: Add SDKs for Firebase products that you want to use
-  // https://firebase.google.com/docs/web/setup#available-libraries
+  // Importy - używamy tych samych wersji, co w app.js (11.6.1)
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+  import { getAuth } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+  import { getFirestore } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+  // Analytics nie jest używane w app.js, więc pomijam import getAnalytics dla czystości
 
-  // Your web app's Firebase configuration
-  // For Firebase JS SDK v7.20.0 and later, measurementId is optional
+  // Konfiguracja (bez zmian)
   const firebaseConfig = {
     apiKey: "AIzaSyCacBxUhSiqaaCBrmVVKluMHMs3iMpR_cA",
     authDomain: "pro-plan-e6f00.firebaseapp.com",
-    databaseURL: "https://pro-plan-e6f00-default-rtdb.europe-west1.firebasedatabase.app",
+    databaseURL: "https://pro-plan-e6f00-default-rtdb.europe-west1.firebasedabase.app",
     projectId: "pro-plan-e6f00",
     storageBucket: "pro-plan-e6f00.firebasestorage.app",
     messagingSenderId: "887703996706",
@@ -28,10 +27,25 @@
     measurementId: "G-1WTB0NNLEB"
   };
 
-  // Initialize Firebase
-  const app = initializeApp(firebaseConfig);
-  const analytics = getAnalytics(app);
+  // Inicjalizacja i przekazanie zmiennych do okna (window)
+  try {
+    const app = initializeApp(firebaseConfig);
+
+    // TO JEST KLUCZOWY BRAKUJĄCY ELEMENT:
+    // Udostępnij globalne zmienne, których oczekuje app.js
+    window.auth = getAuth(app);
+    window.db = getFirestore(app);
+    window.appId = firebaseConfig.appId;
+    window.IS_FIREBASE_CONFIGURED = true;
+    
+    console.log("Firebase skonfigurowane i gotowe (index.html).");
+
+  } catch (error) {
+    console.error("Błąd inicjalizacji Firebase:", error);
+    window.IS_FIREBASE_CONFIGURED = false;
+  }
 </script>
+
 
 <header class="top">
   <h1>Trening Pro<span id="welcomeMsg"></span></h1>

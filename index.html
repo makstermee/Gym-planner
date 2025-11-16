@@ -6,13 +6,12 @@
 <title>Trening Pro 💪</title>
 <link rel="stylesheet" href="style.css">
 <!-- KONIECZNE IMPORY FIREBASE Z CDN -->
-<!-- WAŻNE: W tym środowisku używamy CDN i globalnych zmiennych 'firebase' -->
 <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js"></script>
 <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js"></script>
 <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-  // Zmienne globalne dostarczane przez Canvas
+  // Zmienne globalne dostarczane przez Canvas (MUSZĄ BYĆ UŻYTE)
   const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
   const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : '';
   const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
@@ -21,19 +20,23 @@
   let app, auth, db;
   
   if (Object.keys(firebaseConfig).length > 0) {
-    // Używamy globalnej zmiennej 'firebase' z CDN
+    // Inicjalizacja usług Firebase
     app = firebase.initializeApp(firebaseConfig);
     auth = firebase.auth();
     db = firebase.database();
     
-    // Autoryzacja custom tokenem (wymagane przez środowisko Canvas)
-    // UWAGA: Logika autoryzacji tokenem oraz onAuthStateChanged jest teraz głównie w app.js dla lepszej kontroli.
-    
+    // Ustawienie logowania na Debug, by widzieć potencjalne błędy
+    firebase.firestore.setLogLevel('debug');
   } else {
-    // Fallback w przypadku braku konfiguracji Firebase
+    // Fallback w przypadku braku konfiguracji Firebase - użycie mocków jest niezbędne,
+    // aby app.js się nie zawiesił przy próbie dostępu do metod Firebase.
     console.error("Firebase is not configured. Data persistence will be unavailable.");
-    // Zapewniamy obiekty mockujące, aby app.js się nie zawiesił
-    window.auth = { onAuthStateChanged: (callback) => callback(null), signOut: async () => {}, signInWithEmailAndPassword: async () => {}, createUserWithEmailAndPassword: async () => {} };
+    window.auth = { 
+        onAuthStateChanged: (callback) => callback(null), 
+        signOut: async () => {}, 
+        signInWithEmailAndPassword: async () => { throw new Error('Firebase not configured'); }, 
+        createUserWithEmailAndPassword: async () => { throw new Error('Firebase not configured'); }
+    };
     window.db = { ref: () => ({ once: async () => ({ val: () => null }), set: async () => {} }) };
   }
 </script>
@@ -47,7 +50,7 @@
 
 <main class="container">
 
-  <!-- Panel: Autoryzacja -->
+  <!-- Panel: Autoryzacja - Wymuszenie logowania/rejestracji -->
   <section id="panel-auth" class="panel">
     <h2>Zarządzanie Kontem 🔑</h2>
     <div id="authStatusArea" style="text-align: center; margin-bottom: 20px;">
@@ -58,7 +61,7 @@
 
     <!-- Formularz Logowania/Rejestracji -->
     <div id="authForm" style="border: 1px solid var(--muted); padding: 15px; border-radius: 10px;">
-        <p style="text-align: center; color: var(--muted); margin-top: 0;">Zaloguj się, aby zapisywać plany i logi w chmurze.</p>
+        <p style="text-align: center; color: var(--muted); margin-top: 0;">Zaloguj się lub zarejestruj, aby zapisywać postępy.</p>
         <input id="authEmail" type="email" placeholder="E-mail" required />
         <input id="authPassword" type="password" placeholder="Hasło (min. 6 znaków)" required />
         

@@ -6,6 +6,7 @@
 <title>Trening Pro 💪</title>
 <link rel="stylesheet" href="style.css">
 <!-- KONIECZNE IMPORY FIREBASE Z CDN -->
+<!-- WAŻNE: W tym środowisku używamy CDN i globalnych zmiennych 'firebase' -->
 <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js"></script>
 <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js"></script>
 <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js"></script>
@@ -26,13 +27,8 @@
     db = firebase.database();
     
     // Autoryzacja custom tokenem (wymagane przez środowisko Canvas)
-    auth.onAuthStateChanged(user => {
-      if (!user && initialAuthToken) {
-        auth.signInWithCustomToken(initialAuthToken).catch(error => {
-          console.error("Firebase custom token sign-in failed:", error);
-        });
-      }
-    });
+    // UWAGA: Logika autoryzacji tokenem oraz onAuthStateChanged jest teraz głównie w app.js dla lepszej kontroli.
+    
   } else {
     // Fallback w przypadku braku konfiguracji Firebase
     console.error("Firebase is not configured. Data persistence will be unavailable.");
@@ -53,18 +49,24 @@
 
   <!-- Panel: Autoryzacja -->
   <section id="panel-auth" class="panel">
-    <h2>Zaloguj/Zarejestruj 🔑</h2>
-    <p>Zaloguj się, aby Twoje plany i historia były zapisywane w chmurze.</p>
-    <div class="input-row">
-      <input id="authEmail" type="email" placeholder="E-mail" required />
-      <input id="authPassword" type="password" placeholder="Hasło (min. 6 znaków)" required />
+    <h2>Zarządzanie Kontem 🔑</h2>
+    <div id="authStatusArea" style="text-align: center; margin-bottom: 20px;">
+        <p id="currentAuthStatus" style="font-weight: bold; color: var(--text);"></p>
+        <p id="authError" style="color: var(--danger); font-weight: bold;"></p>
+        <button id="logoutBtn" class="btn-danger" style="display: none; width: 100%;">Wyloguj się</button>
     </div>
-    <div class="button-row">
-      <button id="loginBtn">Zaloguj</button>
-      <button id="registerBtn" class="btn-secondary">Zarejestruj</button>
+
+    <!-- Formularz Logowania/Rejestracji -->
+    <div id="authForm" style="border: 1px solid var(--muted); padding: 15px; border-radius: 10px;">
+        <p style="text-align: center; color: var(--muted); margin-top: 0;">Zaloguj się, aby zapisywać plany i logi w chmurze.</p>
+        <input id="authEmail" type="email" placeholder="E-mail" required />
+        <input id="authPassword" type="password" placeholder="Hasło (min. 6 znaków)" required />
+        
+        <div class="button-row" style="margin-top: 20px;">
+          <button id="loginBtn" class="btn-success">Zaloguj</button>
+          <button id="registerBtn" class="btn-secondary">Zarejestruj</button>
+        </div>
     </div>
-    <p id="authError" style="color: var(--danger); font-weight: bold; text-align: center;"></p>
-    <button id="logoutBtn" class="btn-danger" style="margin-top: 20px;">Wyloguj się</button>
   </section>
 
   <!-- Panel: Główny (Lista dni) -->

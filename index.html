@@ -3,41 +3,81 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Trening Pro v4 🏋️‍♂️</title>
+<title>Trening Pro v5 🌐 (Cloud Sync)</title>
 <link rel="stylesheet" href="style.css">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
 
+<!-- 1. Biblioteki Firebase SDK (Stara wersja 8.x jest kompatybilna z CDN) -->
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+
+<!-- 2. TWOJA UNIKALNA KONFIGURACJA ZAINICJALIZOWANA -->
+<script id="firebase-config">
+  // Twoje dane konfiguracyjne z Firebase Console:
+  const firebaseConfig = {
+    apiKey: "AIzaSyCacBxUhSiqaaCBrmVVKluMHMs3iMpR_cA",
+    authDomain: "pro-plan-e6f00.firebaseapp.com",
+    databaseURL: "https://pro-plan-e6f00-default-rtdb.europe-west1.firebasedatabase.app",
+    projectId: "pro-plan-e6f00",
+    storageBucket: "pro-plan-e6f00.firebasestorage.app",
+    messagingSenderId: "887703996706",
+    appId: "1:887703996706:web:a0f06602408f4307697d7b"
+  };
+
+  // Inicjalizacja Firebase
+  firebase.initializeApp(firebaseConfig);
+  const auth = firebase.auth();
+  const db = firebase.database();
+</script>
+
 <header class="top">
   <h1>Trening Pro <span id="welcomeMsg"></span></h1>
+  <!-- Globalny timer sesji -->
   <div id="masterTimerDisplay" class="master-timer">00:00:00</div>
 </header>
 
 <main class="container">
 
-  <section id="panel-login" class="panel">
-    <h2>Wybierz Użytkownika 👤</h2>
-    <div id="userList" class="user-list-container">
-      </div>
-    
-    <h3>Utwórz Nowe Konto</h3>
-    <div class="input-row register-form">
-      <input id="newUsername" placeholder="Nazwa nowego konta" />
-      <button id="registerUserBtn" class="btn-success">Utwórz i Zaloguj</button>
+  <!-- ============================================= -->
+  <!-- Panel Logowania/Rejestracji (NOWY PANEL AUTH) -->
+  <!-- ============================================= -->
+  <section id="panel-auth" class="panel">
+    <h2>Zaloguj lub Zarejestruj 🔐</h2>
+    <div class="input-group">
+        <label for="authEmail">E-mail:</label>
+        <input id="authEmail" type="email" placeholder="E-mail" required />
+        <label for="authPassword">Hasło:</label>
+        <input id="authPassword" type="password" placeholder="Hasło (min. 6 znaków)" required />
     </div>
+
+    <div class="button-row">
+        <button id="loginBtn" class="btn-success">Zaloguj</button>
+        <button id="registerBtn" class="btn-secondary">Zarejestruj</button>
+    </div>
+    <p id="authError" style="color: var(--danger); margin-top: 15px;"></p>
   </section>
 
+  <!-- ============================================= -->
+  <!-- Panel Główny (Lista Dni Tygodnia) -->
+  <!-- ============================================= -->
   <section id="panel-main" class="panel">
     <h2>Plany Treningowe</h2>
     <div id="dayList" class="day-list">
-      </div>
+      <!-- Dni tygodnia będą wstrzyknięte przez JS -->
+    </div>
   </section>
 
+  <!-- ============================================= -->
+  <!-- Panel Podglądu Planu (Detale) -->
+  <!-- ============================================= -->
   <section id="panel-plan-details" class="panel">
     <h2 id="planDetailsTitle">Plan: ...</h2>
     <div id="planDetailsList" class="exercise-list">
-      </div>
+      <!-- Lista ćwiczeń z planu będzie tutaj -->
+    </div>
     <div class="button-row">
       <button id="backToMainBtn" class="btn-secondary">Wróć</button>
       <button id="editPlanBtn">Edytuj Plan</button>
@@ -45,6 +85,9 @@
     </div>
   </section>
 
+  <!-- ============================================= -->
+  <!-- Panel Edycji Planu -->
+  <!-- ============================================= -->
   <section id="panel-edit-plan" class="panel">
     <h2 id="editPlanTitle">Edytuj: ...</h2>
     <div class="input-row edit-form">
@@ -54,20 +97,28 @@
       <button id="addExerciseBtn">Dodaj</button>
     </div>
     <div id="editPlanList" class="exercise-list">
-      </div>
+      <!-- Lista ćwiczeń do edycji (z przyciskami 'Usuń') -->
+    </div>
     <div class="button-row">
       <button id="savePlanChangesBtn" class="btn-secondary">Zapisz i Wróć</button>
     </div>
   </section>
 
+  <!-- ============================================= -->
+  <!-- Panel Aktywnego Treningu (Sesja) -->
+  <!-- ============================================= -->
   <section id="panel-active-workout" class="panel">
     <h2 id="activeWorkoutTitle">Trening: ...</h2>
     <div id="activeWorkoutList" class="workout-list-container">
-      </div>
+      <!-- Karty ćwiczeń do logowania serii będą tutaj -->
+    </div>
     <button id="finishWorkoutBtn" class="btn-danger">Zakończ i Zapisz Trening</button>
   </section>
 
 
+  <!-- ============================================= -->
+  <!-- Panel: Historia -->
+  <!-- ============================================= -->
   <section id="panel-history" class="panel">
     <h2>Historia i logi 📜</h2>
     <div id="logArea" class="log-area"></div>
@@ -79,26 +130,31 @@
     </div>
   </section>
 
+  <!-- ============================================= -->
+  <!-- Panel: Statystyki -->
+  <!-- ============================================= -->
   <section id="panel-stats" class="panel">
     <h2>Statystyki 📈</h2>
     <canvas id="statsChart" height="200"></canvas>
   </section>
 
+  <!-- ============================================= -->
+  <!-- Panel: Ustawienia -->
+  <!-- ============================================= -->
   <section id="panel-settings" class="panel">
     <h2>Ustawienia ⚙️</h2>
-    <label for="username">Twoja nazwa konta:</label>
-    <input id="username" placeholder="Imię..." />
+    <p>Aktualnie zalogowany: <strong id="loggedUserEmail"></strong></p>
     <label for="themeSelect">Motyw:</label>
     <select id="themeSelect">
       <option value="light">Jasny</option>
       <option value="dark">Ciemny</option>
     </select>
-    <button id="changeUser" class="btn-secondary">Zmień Użytkownika</button>
-    <button id="resetData" class="btn-danger">Resetuj Wszystkie Dane (Aplikacja)</button>
+    <button id="logoutBtn" class="btn-danger">Wyloguj i Zmień Konto</button>
   </section>
 
 </main>
 
+<!-- Dolne menu -->
 <nav class="bottom-nav">
   <button data-panel="panel-main">🏋️‍♂️ Plany</button>
   <button data-panel="panel-history">📜 Historia</button>
@@ -109,3 +165,4 @@
 <script src="app.js"></script>
 </body>
 </html>
+

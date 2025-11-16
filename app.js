@@ -103,7 +103,7 @@ function showConfirmModal(message, onConfirm, onCancel = () => {}) {
 /** Zwraca referencję do dokumentu użytkownika w Firestore. */
 function getUserDocRef() {
     if (!currentUserId || !db) return null;
-    // POPRAWIONA ŚCIEŻKA: Zmieniono z /artifacts/{appId}/users/... na /users/...
+    // POPRAWIONA ŚCIEŻKA: Używa standardowej struktury Firestore: /users/{userId}/data/user_state
     return doc(db, `users/${currentUserId}/data/user_state`);
 }
 
@@ -171,19 +171,19 @@ function clearUserState() {
 // --- Autoryzacja i Logowanie (Firebase Auth) ---
 
 document.addEventListener('DOMContentLoaded', () => {
-    // Pokaż ostrzeżenie, jeśli konfiguracja jest niedostępna
+    // 1. Pokaż/Ukryj ostrzeżenie na podstawie flagi z index.html
     if (!window.IS_FIREBASE_CONFIGURED) {
         configWarning.style.display = 'block';
         authForm.style.display = 'none';
         currentAuthStatus.textContent = 'Status: Oczekiwanie na Konfigurację Chmury.';
         currentUserIdDisplay.textContent = 'Brak ID';
         showPanel('panel-auth');
-        return;
+        return; // Zakończ działanie, jeśli konfiguracja nie istnieje
     } else {
-        configWarning.style.display = 'none';
+        configWarning.style.display = 'none'; // UKRYJ OSTRZEŻENIE, BO KONFIGURACJA JEST OK
     }
 
-    // Główny listener do zarządzania stanem użytkownika
+    // 2. Główny listener do zarządzania stanem użytkownika
     onAuthStateChanged(auth, user => {
         authError.textContent = ''; 
         

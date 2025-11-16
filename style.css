@@ -42,7 +42,8 @@ body {
 
 /* --- Elementy formularzy i przyciski --- */
 .input-row { display: flex; gap: 8px; margin-bottom: 15px; flex-wrap: wrap; }
-.button-row { display: flex; gap: 8px; margin-top: 20px; }
+.input-group { margin-bottom: 15px; }
+.button-row { display: flex; gap: 8px; margin-top: 20px; flex-wrap: wrap;}
 .action-row button { min-width: 100px; }
 label { display: block; margin-top: 10px; margin-bottom: 5px; font-weight: bold; }
 input, select { flex: 1; padding: 12px; border-radius: 8px; border: 1px solid #ccc; min-width: 60px; }
@@ -64,7 +65,7 @@ button.btn-delete { background: var(--danger); color: #fff; font-size: 0.9em; fl
   padding: 18px; text-align: left; font-size: 1.1em;
   background: var(--card); border: 1px solid #ddd;
   border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.08);
-  cursor: pointer; transition: 0.2s;
+  cursor: pointer; transition: 0.2s; width: 100%;
 }
 
 /* --- Lista ćwiczeń (Podgląd i Edycja) --- */
@@ -116,41 +117,6 @@ button.btn-delete { background: var(--danger); color: #fff; font-size: 0.9em; fl
 }
 .bottom-nav button { flex: 1; font-size: 14px; background: none; border: none; color: var(--muted); padding: 5px; }
 .bottom-nav button:hover { background: #f0f0f0; }
-
-/* --- Panel Logowania --- */
-.user-list-container {
-    margin-bottom: 20px;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-}
-.user-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 15px;
-    background: var(--card);
-    border-radius: 10px;
-    border: 2px solid #ddd;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-}
-.user-item.active {
-    border-color: var(--accent);
-    box-shadow: 0 0 10px rgba(255, 87, 34, 0.3);
-}
-.username-display {
-    font-size: 1.1em;
-    font-weight: bold;
-}
-.user-actions {
-    display: flex;
-    gap: 5px;
-}
-.user-actions button {
-    flex: none;
-    padding: 8px 12px;
-    font-size: 0.9em;
-}
 
 /* --- Styl dla Rozwijalnej Historii --- */
 .log-summary-card {
@@ -206,7 +172,7 @@ body.dark input, body.dark select {
 }
 body.dark .top { background: linear-gradient(90deg, #d35400, #ff5722); }
 body.dark .bottom-nav { background: #222; border-top-color: #444; }
-body.dark .day-btn, body.dark .workout-card, body.dark .user-item { background: var(--card); border-color: #444; }
+body.dark .day-btn, body.dark .workout-card { background: var(--card); border-color: #444; }
 body.dark .logged-sets-list div { border-bottom-color: #444; }
 body.dark .workout-card h3 { border-bottom-color: #444; }
 body.dark .rest-timer-section { border-top-color: #444; }

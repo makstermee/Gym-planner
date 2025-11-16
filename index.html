@@ -5,24 +5,27 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Trening Pro 💪</title>
 <link rel="stylesheet" href="style.css">
+<!-- KONIECZNE IMPORY FIREBASE Z CDN -->
 <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js"></script>
 <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js"></script>
 <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-  // Zmienne globalne z Canvas (dostarczane automatycznie)
+  // Zmienne globalne dostarczane przez Canvas
   const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
   const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : '';
   const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
-  // Inicjalizacja Firebase w HTML przed załadowaniem app.js
+  // Inicjalizacja Firebase i globalne zmienne (WAŻNE!)
   let app, auth, db;
+  
   if (Object.keys(firebaseConfig).length > 0) {
+    // Używamy globalnej zmiennej 'firebase' z CDN
     app = firebase.initializeApp(firebaseConfig);
     auth = firebase.auth();
     db = firebase.database();
     
-    // Użycie tokena autoryzacji, jeśli jest dostępny
+    // Autoryzacja custom tokenem (wymagane przez środowisko Canvas)
     auth.onAuthStateChanged(user => {
       if (!user && initialAuthToken) {
         auth.signInWithCustomToken(initialAuthToken).catch(error => {
@@ -31,9 +34,10 @@
       }
     });
   } else {
-    // Fallback dla środowisk bez konfiguracji Firebase
+    // Fallback w przypadku braku konfiguracji Firebase
     console.error("Firebase is not configured. Data persistence will be unavailable.");
-    window.auth = { onAuthStateChanged: (callback) => callback(null), signOut: async () => {} };
+    // Zapewniamy obiekty mockujące, aby app.js się nie zawiesił
+    window.auth = { onAuthStateChanged: (callback) => callback(null), signOut: async () => {}, signInWithEmailAndPassword: async () => {}, createUserWithEmailAndPassword: async () => {} };
     window.db = { ref: () => ({ once: async () => ({ val: () => null }), set: async () => {} }) };
   }
 </script>
@@ -60,7 +64,6 @@
       <button id="registerBtn" class="btn-secondary">Zarejestruj</button>
     </div>
     <p id="authError" style="color: var(--danger); font-weight: bold; text-align: center;"></p>
-    <p id="loggedUserEmail" style="text-align: center; margin-top: 10px; font-weight: bold; color: var(--accent);"></p>
     <button id="logoutBtn" class="btn-danger" style="margin-top: 20px;">Wyloguj się</button>
   </section>
 
@@ -144,8 +147,8 @@
   <section id="panel-settings" class="panel">
     <h2>Ustawienia ⚙️</h2>
     
-    <label for="loggedUserEmail" style="font-size: 0.9em; margin-bottom: 5px;">Zalogowany jako:</label>
-    <p id="loggedUserEmail" style="font-weight: bold; margin-bottom: 20px; color: var(--accent);"></p>
+    <label for="loggedUserEmailDisplay" style="font-size: 0.9em; margin-bottom: 5px;">Zalogowany jako:</label>
+    <p id="loggedUserEmailDisplay" style="font-weight: bold; margin-bottom: 20px; color: var(--accent);"></p>
 
     <label for="themeSelect">Motyw aplikacji:</label>
     <select id="themeSelect">

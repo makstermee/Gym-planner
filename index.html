@@ -9,9 +9,51 @@
 </head>
 <body>
 
+<script type="module">
+  
+  // --- Twoja Własna Konfiguracja Firebase ---
+  const firebaseConfig = {
+    apiKey: "AIzaSyCacBxUhSiqaaCBrmVVKluMHMs3iMpR_cA",
+    authDomain: "pro-plan-e6f00.firebaseapp.com",
+    databaseURL: "https://pro-plan-e6f00-default-rtdb.europe-west1.firebasedatabase.app",
+    projectId: "pro-plan-e6f00",
+    storageBucket: "pro-plan-e6f00.firebasestorage.app",
+    messagingSenderId: "887703996706",
+    appId: "1:887703996706:web:a0f06602408f4307697d7b",
+    measurementId: "G-7XN0YLKZWX"
+  };
 
-<script type="module" src="firebase-config.js"></script>
-<script type="module" src="app.js"></script>
+  // Ustawienie flag i ID aplikacji
+  window.IS_FIREBASE_CONFIGURED = Object.keys(firebaseConfig).length > 0 && firebaseConfig.apiKey;
+  window.appId = firebaseConfig.appId; // Ustaw globalnie ID aplikacji
+
+  // Ustawienie globalnych referencji (dostępnych w app.js)
+  window.app, window.auth, window.db;
+
+  // Sprawdź, czy konfiguracja Firebase istnieje.
+  if (window.IS_FIREBASE_CONFIGURED) {
+    // Modularne importy Firebase (zamiast CDN)
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { getAuth } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { getFirestore, doc, setDoc, onSnapshot, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+    
+    // Inicjalizacja usług
+    window.app = initializeApp(firebaseConfig);
+    window.auth = getAuth(window.app);
+    window.db = getFirestore(window.app);
+    // setLogLevel('debug'); // Możesz odkomentować to do debugowania, ale domyślnie jest wyłączone
+
+    console.log("Firebase configured and initialized with Firestore.");
+
+  } else {
+    // --- Mockowanie (w przypadku braku konfiguracji) ---
+    console.error("Firebase configuration missing. Cloud login will not work.");
+    // Zapewniamy minimalne, nierealne implementacje, aby kod się nie złamał
+    window.auth = { onAuthStateChanged: (cb) => { setTimeout(() => cb(null), 100); return () => {}; }, signOut: async () => {}, signInWithEmailAndPassword: async () => { throw new Error('Brak konfiguracji Firebase.'); }, createUserWithEmailAndPassword: async () => { throw new Error('Brak konfiguracji Firebase.'); }};
+    window.db = {};
+  }
+</script>
+
 <header class="top">
   <h1>Trening Pro<span id="welcomeMsg"></span></h1>
   <div id="masterTimerDisplay" class="master-timer" style="display:none;">00:00:00</div>
@@ -19,7 +61,6 @@
 
 <main class="container">
 
-  <!-- Panel: Autoryzacja - Jest teraz domyślnie AKTYWNY, dopóki nie nastąpi logowanie -->
   <section id="panel-auth" class="panel active">
     <h2>Zarządzanie Kontem 🔑</h2>
     <div id="authStatusArea" style="text-align: center; margin-bottom: 20px;">
@@ -27,13 +68,11 @@
         <p id="authError" style="color: var(--danger); font-weight: bold;"></p>
     </div>
 
-    <!-- Ostrzeżenie, jeśli brakuje konfiguracji -->
     <div id="configWarning" style="background: var(--danger); color: #fff; padding: 15px; border-radius: 10px; margin-bottom: 20px; display: none;">
         <strong>Błąd Konfiguracji Chmury!</strong><br>
         <p style="margin: 5px 0 0 0;">Autoryzacja i zapis na wielu urządzeniach nie są dostępne, dopóki system nie dostarczy konfiguracji Firebase.</p>
     </div>
 
-    <!-- Formularz Logowania/Rejestracji -->
     <div id="authForm">
         <p style="text-align: center; color: var(--muted); margin-top: 0;">Zaloguj się lub zarejestruj, aby zapisywać postępy.</p>
         <input id="authEmail" type="email" placeholder="E-mail" required />
@@ -52,20 +91,16 @@
     </p>
   </section>
 
-  <!-- Panel: Główny (Lista dni) -->
   <section id="panel-main" class="panel">
     <h2>Plany Treningowe 📅</h2>
     <div id="dayList" class="day-list">
-      <!-- Tutaj wylądują przyciski dni tygodnia generowane przez JS -->
-    </div>
+      </div>
   </section>
   
-  <!-- Panel: Szczegóły Planu (Day Details) -->
   <section id="panel-plan-details" class="panel">
     <h2 id="planDetailsTitle">Plan: Poniedziałek</h2>
     <div id="planDetailsList" class="exercise-list">
-      <!-- Lista ćwiczeń w planie -->
-    </div>
+      </div>
     <div class="button-row" style="margin-top: 20px;">
       <button id="editPlanBtn" class="btn-secondary">Edytuj plan</button>
       <button id="startWorkoutBtn" class="btn-success">Rozpocznij trening</button>
@@ -73,7 +108,6 @@
     <button id="backToMainBtn" class="btn-secondary" style="margin-top: 10px; width: 100%;">Powrót do listy dni</button>
   </section>
 
-  <!-- Panel: Edytor Planu -->
   <section id="panel-edit-plan" class="panel">
     <h2 id="editPlanTitle">Edytuj: Dzień</h2>
     
@@ -87,31 +121,26 @@
     
     <h3>Ćwiczenia w Planie</h3>
     <div id="editPlanList" class="exercise-list">
-      <!-- Lista ćwiczeń do edycji -->
-    </div>
+      </div>
 
     <div class="button-row" style="margin-top: 20px;">
       <button id="savePlanChangesBtn" class="btn-success">Zapisz zmiany i wróć</button>
     </div>
   </section>
 
-  <!-- Panel: Aktywny Trening -->
   <section id="panel-active-workout" class="panel">
     <h2 id="activeWorkoutTitle">Aktywny Trening</h2>
     <div id="activeWorkoutList" class="exercise-list">
-      <!-- Dynamiczna lista ćwiczeń z formularzem logowania serii -->
-    </div>
+      </div>
     
     <button id="finishWorkoutBtn" class="btn-danger" style="margin-top: 20px; width: 100%;">Zakończ Trening i Zapisz Log</button>
   </section>
 
 
-  <!-- Panel: Logi (Historia) -->
   <section id="panel-logs" class="panel">
     <h2>Historia Logów 📜</h2>
     <div id="logArea" class="log-area">
-      <!-- Logi treningowe -->
-    </div>
+      </div>
     
     <div class="button-row" style="margin-top: 20px;">
       <button id="clearHistory" class="btn-danger">Wyczyść historię</button>
@@ -121,14 +150,12 @@
     </div>
   </section>
 
-  <!-- Panel: Statystyki -->
   <section id="panel-stats" class="panel">
     <h2>Statystyki 📈</h2>
     <canvas id="statsChart" height="250"></canvas>
     <p style="text-align: center; color: var(--muted); margin-top: 10px;">Objętość treningowa (kg * powtórzenia) w czasie.</p>
   </section>
 
-  <!-- Panel: Ustawienia -->
   <section id="panel-settings" class="panel">
     <h2>Ustawienia ⚙️</h2>
     
@@ -144,7 +171,6 @@
 
 </main>
 
-<!-- Dolne menu nawigacyjne (domyślnie ukryte, by wymusić logowanie) -->
 <nav class="bottom-nav" id="bottomNav" style="display: none;">
   <button data-panel="panel-main">Plan</button>
   <button data-panel="panel-logs">Logi</button>
@@ -156,4 +182,3 @@
 <script type="module" src="app.js"></script>
 </body>
 </html>
-

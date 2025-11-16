@@ -103,8 +103,8 @@ function showConfirmModal(message, onConfirm, onCancel = () => {}) {
 /** Zwraca referencję do dokumentu użytkownika w Firestore. */
 function getUserDocRef() {
     if (!currentUserId || !db) return null;
-    // Ścieżka: /artifacts/{appId}/users/{userId}/data/user_state
-    return doc(db, `artifacts/${appId}/users/${currentUserId}/data/user_state`);
+    // POPRAWIONA ŚCIEŻKA: Zmieniono z /artifacts/{appId}/users/... na /users/...
+    return doc(db, `users/${currentUserId}/data/user_state`);
 }
 
 /** Zapisuje cały stan 'state' do Firestore. */

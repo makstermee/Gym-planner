@@ -9,57 +9,9 @@
 </head>
 <body>
 
-<!-- Wymagane skrypty Firebase -->
-<script type="module">
-  // --- Globalne zmienne dostarczone przez środowisko Canvas (MUSZĄ być użyte) ---
-  // Używamy typeof dla bezpieczeństwa
-  const __firebase_config = typeof __firebase_config !== 'undefined' ? __firebase_config : '{}';
-  const __initial_auth_token = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : '';
-  const __app_id = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
-  const firebaseConfig = JSON.parse(__firebase_config);
-
-  // Sprawdź, czy konfiguracja jest kompletna
-  window.IS_FIREBASE_CONFIGURED = Object.keys(firebaseConfig).length > 0 && firebaseConfig.apiKey;
-  window.appId = __app_id; // Ustaw globalnie ID aplikacji
-
-  // Ustawienie globalnych referencji (dostępnych w app.js)
-  window.app, window.auth, window.db;
-
-  // Sprawdź, czy konfiguracja Firebase istnieje.
-  if (window.IS_FIREBASE_CONFIGURED) {
-    // Modularne importy Firebase (zamiast CDN)
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-    import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged, 
-             signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-    import { getFirestore, doc, setDoc, onSnapshot, getDoc, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-    // Inicjalizacja usług
-    window.app = initializeApp(firebaseConfig);
-    window.auth = getAuth(window.app);
-    window.db = getFirestore(window.app);
-    setLogLevel('debug'); // Włącz logowanie dla Firestore
-
-    console.log("Firebase configured and initialized with Firestore.");
-
-    // Próba logowania tokenem Canvas, jeśli dostępny
-    if (__initial_auth_token) {
-        signInWithCustomToken(window.auth, __initial_auth_token)
-            .then(userCredential => console.log("Canvas initial sign-in successful:", userCredential.user.uid))
-            .catch(error => {
-                console.warn("Canvas custom token sign-in failed. Proceeding with onAuthStateChanged.", error.message);
-            });
-    }
-
-  } else {
-    // --- Mockowanie (w przypadku braku konfiguracji) ---
-    console.error("Firebase configuration missing. Cloud login will not work.");
-    // Zapewniamy minimalne, nierealne implementacje, aby kod się nie złamał
-    window.auth = { onAuthStateChanged: (cb) => { setTimeout(() => cb(null), 100); return () => {}; }, signOut: async () => {}, signInWithEmailAndPassword: async () => { throw new Error('Brak konfiguracji Firebase.'); }, createUserWithEmailAndPassword: async () => { throw new Error('Brak konfiguracji Firebase.'); }};
-    window.db = {};
-  }
-</script>
-
+<script type="module" src="firebase-config.js"></script>
+<script type="module" src="app.js"></script>
 <header class="top">
   <h1>Trening Pro<span id="welcomeMsg"></span></h1>
   <div id="masterTimerDisplay" class="master-timer" style="display:none;">00:00:00</div>

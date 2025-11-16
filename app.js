@@ -1,4 +1,4 @@
-// Konfiguracja Firebase jest w index.html (zmienne auth i db są globalne).
+// Używa globalnych zmiennych 'auth', 'db' i 'app' zainicjowanych w index.html
 
 // --- Struktury Danych i Stany ---
 
@@ -34,17 +34,66 @@ const authError = document.getElementById('authError');
 let statsChart = null;
 let currentDay = null;
 
+
+// --- Funkcje pomocnicze UI ---
+
+/**
+ * Wyświetla prosty modal z komunikatem błędu/sukcesu.
+ * @param {string} message Treść komunikatu.
+ * @param {string} type Typ (success/error/info)
+ */
+function showErrorModal(message, type = 'error') {
+    const modal = document.createElement('div');
+    modal.className = 'modal-message';
+    
+    const bgColor = type === 'error' ? 'var(--danger)' : type === 'success' ? 'var(--success)' : 'var(--accent)';
+    // Stylizacja jest w style.css, tutaj tylko przypisanie koloru tła
+    modal.style.background = bgColor;
+    modal.innerHTML = `<strong>${message}</strong>`;
+    
+    document.body.appendChild(modal);
+    setTimeout(() => modal.remove(), 3000);
+}
+
+/**
+ * Wyświetla modal z opcją Tak/Nie
+ * @param {string} message Treść pytania
+ * @param {function} onConfirm Funkcja wywoływana po "Tak"
+ * @param {function} onCancel Funkcja wywoływana po "Nie"
+ */
+function showConfirmModal(message, onConfirm, onCancel = () => {}) {
+    const modal = document.createElement('div');
+    modal.className = 'modal-confirm';
+    modal.innerHTML = `
+        <p>${message}</p>
+        <div class="button-row" style="margin-bottom: 0;">
+            <button id="modalConfirmYes" class="btn-success" style="margin-right: 10px;">Tak</button>
+            <button id="modalConfirmNo" class="btn-secondary">Nie</button>
+        </div>
+    `;
+    document.body.appendChild(modal);
+
+    document.getElementById('modalConfirmYes').onclick = () => {
+        modal.remove();
+        onConfirm();
+    };
+    document.getElementById('modalConfirmNo').onclick = () => {
+        modal.remove();
+        onCancel();
+    };
+}
+
+
 // --- Obsługa Bazy Danych (Firebase) ---
 
 /** Zwraca referencję do danych zalogowanego użytkownika w bazie Firebase. */
 function getDbRef() {
-    if (!currentUserId) return null;
-    // Ścieżka: users/[UID_Użytkownika]/data
-    return db.ref('users/' + currentUserId + '/data');
+    if (!currentUserId || !db) return null;
+    // Używamy /artifacts/{appId}/users/{userId}/data jako ścieżki
+    return db.ref(`artifacts/${appId}/users/${currentUserId}/data`);
 }
 
 /** * Zapisuje aktualny stan 'state' do Firebase. 
- * Używamy db.ref().set() zamiast update, aby nadpisać cały obiekt stanu.
  */
 async function saveState() {
     const dbRef = getDbRef();
@@ -53,14 +102,14 @@ async function saveState() {
         return;
     }
 
-    // Klonowanie stanu
     const stateToSave = JSON.parse(JSON.stringify(state)); 
 
     try {
         await dbRef.set(stateToSave);
+        console.log("Stan zapisany pomyślnie.");
     } catch (error) {
         console.error("Błąd zapisu danych do Firebase:", error);
-        // W produkcyjnej aplikacji można by pokazać modal z błędem zapisu
+        showErrorModal("Błąd zapisu danych do chmury.", 'error');
     }
 }
 
@@ -70,17 +119,21 @@ async function loadState(userId, email) {
     currentUserId = userId;
     currentUserEmail = email;
     const dbRef = getDbRef();
-    if (!dbRef) return;
+    if (!dbRef) {
+        initAppUI(); // Zrób to z domyślnym stanem, jeśli DB jest niedostępna
+        return;
+    }
 
     try {
         const snapshot = await dbRef.once('value');
         const userData = snapshot.val();
         
         if (userData) {
-            // Użyj wczytanych danych
-            state = userData;
+            // Użyj wczytanych danych i upewnij się, że plany mają wszystkie dni tygodnia
+            state = { ...defaultUserState, ...userData };
+            state.plans = { ...defaultUserState.plans, ...(userData.plans || {}) };
         } else {
-            // Pierwsze logowanie - ustaw domyślny stan i zapisz go
+            // Pierwsze logowanie
             state = JSON.parse(JSON.stringify(defaultUserState));
             await saveState(); 
         }
@@ -89,7 +142,8 @@ async function loadState(userId, email) {
         initAppUI();
     } catch (error) {
         console.error("Błąd wczytywania danych z Firebase:", error);
-        // Jeśli błąd wczytywania, nie wylogowujemy, ale używamy domyślnego stanu
+        showErrorModal("Błąd wczytywania danych z chmury.", 'error');
+        // Jeśli błąd wczytywania, używamy domyślnego stanu, by aplikacja się nie zablokowała
         initAppUI(); 
     }
 }
@@ -107,12 +161,11 @@ document.getElementById('loginBtn').onclick = async () => {
 
     try {
         document.getElementById('loginBtn').disabled = true;
-        const userCredential = await auth.signInWithEmailAndPassword(email, password);
-        // Listener onAuthStateChanged przejmie kontrolę
+        await auth.signInWithEmailAndPassword(email, password);
     } catch (error) {
         let message = "Wystąpił błąd logowania.";
-        if (error.code === 'auth/user-not-found') {
-            message = "Brak konta z tym e-mailem. Zarejestruj się.";
+        if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential') {
+            message = "Nieprawidłowy e-mail lub hasło.";
         } else if (error.code === 'auth/wrong-password') {
             message = "Nieprawidłowe hasło.";
         } else if (error.code === 'auth/too-many-requests') {
@@ -137,9 +190,8 @@ document.getElementById('registerBtn').onclick = async () => {
 
     try {
         document.getElementById('registerBtn').disabled = true;
-        // Rejestracja i automatyczne logowanie
-        const userCredential = await auth.createUserWithEmailAndPassword(email, password);
-        // Listener onAuthStateChanged przejmie kontrolę
+        await auth.createUserWithEmailAndPassword(email, password);
+        showErrorModal("Rejestracja udana! Zostałeś automatycznie zalogowany.", 'success');
     } catch (error) {
         let message = "Błąd rejestracji.";
         if (error.code === 'auth/email-already-in-use') {
@@ -156,19 +208,7 @@ document.getElementById('registerBtn').onclick = async () => {
 };
 
 document.getElementById('logoutBtn').onclick = async () => {
-    // Używamy alert zamiast confirm, by nie blokować iframa
-    const modal = document.createElement('div');
-    modal.className = 'modal-confirm';
-    modal.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);padding:20px;background:white;border-radius:10px;box-shadow:0 0 20px rgba(0,0,0,0.5);z-index:100; text-align: center;';
-    modal.innerHTML = `
-        <p>Czy na pewno chcesz się wylogować?</p>
-        <button id="modalConfirmYes" class="btn-danger" style="margin-right: 10px;">Tak</button>
-        <button id="modalConfirmNo" class="btn-secondary">Nie</button>
-    `;
-    document.body.appendChild(modal);
-
-    document.getElementById('modalConfirmYes').onclick = async () => {
-        modal.remove();
+    showConfirmModal("Czy na pewno chcesz się wylogować?", async () => {
         // Zakończenie timerów
         if (masterTimerInterval) clearInterval(masterTimerInterval);
         if (restTimerInterval) clearInterval(restTimerInterval);
@@ -176,68 +216,67 @@ document.getElementById('logoutBtn').onclick = async () => {
         masterTimerDisplay.style.display = 'none';
         
         await auth.signOut();
-    };
-    document.getElementById('modalConfirmNo').onclick = () => {
-        modal.remove();
-    };
+        showPanel('panel-auth');
+    });
 };
 
 // --- Główny Listener Firebase (Uruchomienie Aplikacji) ---
 
-auth.onAuthStateChanged(user => {
-    if (user) {
-        // Użytkownik ZALOGOWANY
-        document.getElementById('loggedUserEmail').textContent = user.email;
-        document.getElementById('authEmail').value = ''; // Wyczyść formularz
-        document.getElementById('authPassword').value = ''; 
-        loadState(user.uid, user.email);
-    } else {
-        // Użytkownik WYLOWOGANY
-        currentUserId = null;
-        currentUserEmail = null;
-        state = JSON.parse(JSON.stringify(defaultUserState)); // Wyczyść stan lokalny
-        showPanel('panel-auth'); // Pokaż panel logowania
-        updateWelcome();
-        // Wyłącz timer, jeśli został
-        if (masterTimerInterval) clearInterval(masterTimerInterval);
-        if (restTimerInterval) clearInterval(restTimerInterval);
-    }
-});
+if (auth) {
+    auth.onAuthStateChanged(user => {
+        if (user) {
+            // Użytkownik ZALOGOWANY
+            document.getElementById('loggedUserEmail').textContent = user.email;
+            document.getElementById('authEmail').value = ''; // Wyczyść formularz
+            document.getElementById('authPassword').value = ''; 
+            loadState(user.uid, user.email);
+        } else {
+            // Użytkownik WYLOWOGANY (lub przed zalogowaniem)
+            currentUserId = null;
+            currentUserEmail = null;
+            state = JSON.parse(JSON.stringify(defaultUserState)); // Wyczyść stan lokalny
+            showPanel('panel-auth'); // Pokaż panel logowania
+            updateWelcome();
+            // Wyłącz timer, jeśli został
+            if (masterTimerInterval) clearInterval(masterTimerInterval);
+            if (restTimerInterval) clearInterval(restTimerInterval);
+            masterTimerDisplay.style.display = 'none';
+        }
+    });
+} else {
+    // Brak konfiguracji Firebase
+    document.addEventListener('DOMContentLoaded', () => {
+        currentUserId = 'anonymous-local';
+        currentUserEmail = 'lokalny@treningpro.pl';
+        document.getElementById('loggedUserEmail').textContent = currentUserEmail;
+        document.getElementById('logoutBtn').style.display = 'none';
+        document.getElementById('loginBtn').style.display = 'none';
+        document.getElementById('registerBtn').style.display = 'none';
+        document.getElementById('authError').textContent = "Brak połączenia z chmurą. Dane będą resetowane po odświeżeniu.";
+        initAppUI();
+    });
+}
+
 
 // --- Funkcja inicjalizująca interfejs (po zalogowaniu) ---
 
 function initAppUI() {
     // 1. Sprawdzenie wznowienia treningu
     if (state.activeWorkout.isActive) {
-        // Upewnij się, że stary interwał nie działa
         if (masterTimerInterval) clearInterval(masterTimerInterval); 
         
-        // Zastąpienie window.confirm() modalem
-        const modal = document.createElement('div');
-        modal.className = 'modal-confirm';
-        modal.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);padding:20px;background:white;border-radius:10px;box-shadow:0 0 20px rgba(0,0,0,0.5);z-index:100; text-align: center;';
-        modal.innerHTML = `
-            <p>Wykryto niezakończony trening. Chcesz go wznowić?</p>
-            <button id="modalConfirmYes" class="btn-success" style="margin-right: 10px;">Wznów</button>
-            <button id="modalConfirmNo" class="btn-secondary">Anuluj</button>
-        `;
-        document.body.appendChild(modal);
-
-        document.getElementById('modalConfirmYes').onclick = () => {
-            modal.remove();
+        showConfirmModal("Wykryto niezakończony trening. Chcesz go wznowić?", () => {
+            // Wznów
             masterTimerInterval = setInterval(updateMasterTimer, 1000);
             masterTimerDisplay.style.display = 'block';
             renderActiveWorkout();
             showPanel('panel-active-workout');
-        };
-
-        document.getElementById('modalConfirmNo').onclick = async () => {
-            modal.remove();
-            // Anuluj trening (zresetuj, zapisz do chmury i zacznij normalnie)
+        }, () => {
+            // Anuluj
             state.activeWorkout = defaultUserState.activeWorkout;
-            await saveState(); 
+            saveState(); 
             showPanel('panel-main');
-        };
+        });
 
     } else {
         // Jeśli nie ma aktywnego treningu, pokaż główny panel
@@ -257,23 +296,27 @@ function initAppUI() {
 function showPanel(panelId) {
   // Wymuś logowanie, jeśli panel nie jest panelem autoryzacji
   if (!currentUserId && panelId !== 'panel-auth') {
-    return showPanel('panel-auth');
+    // Upewnij się, że app.js jest w pełni załadowany i auth jest dostępne
+    if (auth) return showPanel('panel-auth'); 
   }
 
   // Wymuś pozostanie w aktywnym treningu
   if (state.activeWorkout.isActive && panelId !== 'panel-active-workout') {
-    // Używamy własnego komunikatu zamiast alert()
-    const modal = document.createElement('div');
-    modal.className = 'modal-message';
-    modal.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);padding:20px;background:var(--card);border-radius:10px;box-shadow:0 0 20px rgba(0,0,0,0.5);z-index:100; color: var(--text);';
-    modal.innerHTML = '<strong>Najpierw zakończ aktywny trening!</strong>';
-    document.body.appendChild(modal);
-    setTimeout(() => modal.remove(), 2000);
+    showErrorModal('Najpierw zakończ aktywny trening!', 'info');
     return;
   }
   
   panels.forEach(p => p.classList.remove('active'));
   document.getElementById(panelId).classList.add('active');
+
+  // Podświetl aktywny przycisk nawigacji
+  document.querySelectorAll('.bottom-nav button').forEach(btn => {
+      btn.classList.remove('active');
+      if (btn.dataset.panel === panelId) {
+          btn.classList.add('active');
+      }
+  });
+
 
   if (panelId === 'panel-stats') {
     if (!statsChart) initStatsChart();
@@ -296,8 +339,9 @@ document.getElementById('savePlanChangesBtn').onclick = () => {
 // --- Ustawienia i Motyw ---
 
 function updateWelcome() {
-    // Wyświetla imię użytkownika (część e-maila przed @) lub nic
-    welcomeMsg.textContent = currentUserEmail ? `, ${currentUserEmail.split('@')[0]}!` : '';
+    // Wyświetla imię użytkownika (część e-maila przed @)
+    const emailPart = currentUserEmail ? currentUserEmail.split('@')[0] : '';
+    welcomeMsg.textContent = emailPart ? `, ${emailPart}!` : '!';
 }
 
 const themeSelect = document.getElementById('themeSelect');
@@ -323,6 +367,7 @@ function renderDayList() {
 
     const btn = document.createElement('button');
     btn.className = 'day-btn';
+    // TUTAJ ZWERYFIKOWANY POPRAWNY ZAPIS TEKSTU W CELU ZGODNOŚCI Z iOS/Androidem
     btn.textContent = `${dayName} (${plan.length} ćw.)`;
     btn.onclick = () => showPlanDetails(dayName);
     dayList.appendChild(btn);
@@ -365,27 +410,26 @@ function showPlanEditor(dayName) {
   renderEditPlanList();
   
   document.getElementById('addExerciseBtn').onclick = () => {
-    const name = document.getElementById('exName').value;
+    const name = document.getElementById('exName').value.trim();
     const sets = +document.getElementById('exTargetSets').value;
     const reps = +document.getElementById('exTargetReps').value;
 
-    // Zastąpienie alert() modalem
     if (!name || sets < 1 || reps < 1) {
-        const modal = document.createElement('div');
-        modal.className = 'modal-message';
-        modal.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);padding:20px;background:white;border-radius:10px;box-shadow:0 0 20px rgba(0,0,0,0.5);z-index:100;';
-        modal.innerHTML = '<strong>Wypełnij wszystkie pola poprawnymi wartościami (min. 1).</strong>';
-        document.body.appendChild(modal);
-        setTimeout(() => modal.remove(), 2000);
+        showErrorModal("Wypełnij wszystkie pola poprawnymi wartościami (min. 1).");
         return;
+    }
+
+    // Upewnienie się, że plan dla tego dnia istnieje
+    if (!state.plans[dayName]) {
+        state.plans[dayName] = [];
     }
 
     state.plans[dayName].push({ name: name, targetSets: sets, targetReps: reps });
     saveState();
     renderEditPlanList();
     document.getElementById('exName').value = '';
-    document.getElementById('exTargetSets').value = '';
-    document.getElementById('exTargetReps').value = '';
+    document.getElementById('exTargetSets').value = '3';
+    document.getElementById('exTargetReps').value = '10';
   };
 
   showPanel('panel-edit-plan');
@@ -394,7 +438,9 @@ function showPlanEditor(dayName) {
 function renderEditPlanList() {
   const list = document.getElementById('editPlanList');
   list.innerHTML = '';
-  state.plans[currentDay].forEach((ex, index) => {
+  const plan = state.plans[currentDay] || [];
+
+  plan.forEach((ex, index) => {
     const div = document.createElement('div');
     div.className = 'card';
     div.innerHTML = `
@@ -402,30 +448,15 @@ function renderEditPlanList() {
         <strong>${ex.name}</strong><br>
         <span>Cel: ${ex.targetSets} x ${ex.targetReps}</span>
       </div>
-      <button class="btn-delete" data-index="${index}">Usuń</button>
+      <button class="btn-danger" data-index="${index}" style="flex: 0 0 auto; width: 60px; padding: 5px;">Usuń</button>
     `;
-    div.querySelector('.btn-delete').onclick = () => {
-      // Zastąpienie confirm() modalem
-      const modal = document.createElement('div');
-      modal.className = 'modal-confirm';
-      modal.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);padding:20px;background:white;border-radius:10px;box-shadow:0 0 20px rgba(0,0,0,0.5);z-index:100; text-align: center;';
-      modal.innerHTML = `
-          <p>Usunąć "${ex.name}" z planu?</p>
-          <button id="modalConfirmYes" class="btn-danger" style="margin-right: 10px;">Tak</button>
-          <button id="modalConfirmNo" class="btn-secondary">Nie</button>
-      `;
-      document.body.appendChild(modal);
-
-      document.getElementById('modalConfirmYes').onclick = () => {
-        modal.remove();
+    div.querySelector('.btn-danger').onclick = () => {
+      showConfirmModal(`Usunąć "${ex.name}" z planu?`, () => {
         state.plans[currentDay].splice(index, 1);
         saveState();
         renderEditPlanList();
         renderDayList();
-      };
-      document.getElementById('modalConfirmNo').onclick = () => {
-        modal.remove();
-      };
+      });
     };
     list.appendChild(div);
   });
@@ -436,30 +467,12 @@ function renderEditPlanList() {
 function startWorkout(dayName) {
   const plan = state.plans[dayName] || [];
 
-  // Zastąpienie alert() modalem
   if (plan.length === 0) {
-    const modal = document.createElement('div');
-    modal.className = 'modal-message';
-    modal.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);padding:20px;background:white;border-radius:10px;box-shadow:0 0 20px rgba(0,0,0,0.5);z-index:100;';
-    modal.innerHTML = '<strong>Ten plan jest pusty. Najpierw dodaj ćwiczenia, aby zacząć.</strong>';
-    document.body.appendChild(modal);
-    setTimeout(() => modal.remove(), 3000);
+    showErrorModal("Ten plan jest pusty. Najpierw dodaj ćwiczenia, aby zacząć.", 'info');
     return;
   }
   
-  // Zastąpienie confirm() modalem
-  const modal = document.createElement('div');
-  modal.className = 'modal-confirm';
-  modal.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);padding:20px;background:white;border-radius:10px;box-shadow:0 0 20px rgba(0,0,0,0.5);z-index:100; text-align: center;';
-  modal.innerHTML = `
-      <p>Rozpocząć trening: ${dayName}?</p>
-      <button id="modalConfirmYes" class="btn-success" style="margin-right: 10px;">Start</button>
-      <button id="modalConfirmNo" class="btn-secondary">Anuluj</button>
-  `;
-  document.body.appendChild(modal);
-
-  document.getElementById('modalConfirmYes').onclick = () => {
-    modal.remove();
+  showConfirmModal(`Rozpocząć trening: ${dayName}?`, () => {
     state.activeWorkout.isActive = true;
     state.activeWorkout.dayName = dayName;
     state.activeWorkout.startTime = Date.now();
@@ -477,10 +490,7 @@ function startWorkout(dayName) {
     renderActiveWorkout();
     showPanel('panel-active-workout');
     saveState();
-  };
-  document.getElementById('modalConfirmNo').onclick = () => {
-    modal.remove();
-  };
+  });
 }
 
 function renderActiveWorkout() {
@@ -511,7 +521,7 @@ function renderActiveWorkout() {
       <form class="log-set-form" data-ex-index="${exIndex}">
         <input type="number" class="log-weight" placeholder="Ciężar (kg)" value="${lastWeight}" required>
         <input type="number" class="log-reps" placeholder="Powtórzenia" required>
-        <button type="submit" class="btn-success">Zapisz Serię</button>
+        <button type="submit" class="btn-success" style="flex: 0 0 100px;">Zapisz</button>
       </form>
       
       <div class="rest-timer-section">
@@ -539,13 +549,7 @@ function renderActiveWorkout() {
         repsInput.value = ''; // Wyczyść tylko pole powtórzeń
         startRestTimer(exIndex, 60); // Standardowy timer 60s
       } else {
-        // Zastąpienie alert() modalem
-        const modal = document.createElement('div');
-        modal.className = 'modal-message';
-        modal.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);padding:20px;background:white;border-radius:10px;box-shadow:0 0 20px rgba(0,0,0,0.5);z-index:100;';
-        modal.innerHTML = '<strong>Podaj poprawne wartości dla ciężaru (min. 0) i powtórzeń (min. 1).</strong>';
-        document.body.appendChild(modal);
-        setTimeout(() => modal.remove(), 3000);
+        showErrorModal("Podaj poprawne wartości dla ciężaru (min. 0) i powtórzeń (min. 1).");
       }
     };
   });
@@ -570,26 +574,11 @@ function logSet(exIndex, weight, reps) {
 }
 
 function removeSet(exIndex, setIndex) {
-    // Zastąpienie confirm() modalem
-    const modal = document.createElement('div');
-    modal.className = 'modal-confirm';
-    modal.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);padding:20px;background:white;border-radius:10px;box-shadow:0 0 20px rgba(0,0,0,0.5);z-index:100; text-align: center;';
-    modal.innerHTML = `
-        <p>Usunąć tę serię?</p>
-        <button id="modalConfirmYes" class="btn-danger" style="margin-right: 10px;">Tak</button>
-        <button id="modalConfirmNo" class="btn-secondary">Nie</button>
-    `;
-    document.body.appendChild(modal);
-
-    document.getElementById('modalConfirmYes').onclick = () => {
-        modal.remove();
+    showConfirmModal("Usunąć tę serię?", () => {
         state.activeWorkout.exercises[exIndex].loggedSets.splice(setIndex, 1);
         saveState();
         renderActiveWorkout();
-    };
-    document.getElementById('modalConfirmNo').onclick = () => {
-        modal.remove();
-    };
+    });
 }
 
 function startRestTimer(exIndex, seconds) {
@@ -642,20 +631,7 @@ function updateMasterTimer() {
 }
 
 document.getElementById('finishWorkoutBtn').onclick = () => {
-    // Zastąpienie confirm() modalem
-    const modal = document.createElement('div');
-    modal.className = 'modal-confirm';
-    modal.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);padding:20px;background:white;border-radius:10px;box-shadow:0 0 20px rgba(0,0,0,0.5);z-index:100; text-align: center;';
-    modal.innerHTML = `
-        <p>Zakończyć i zapisać ten trening?</p>
-        <button id="modalConfirmYes" class="btn-danger" style="margin-right: 10px;">Zapisz</button>
-        <button id="modalConfirmNo" class="btn-secondary">Anuluj</button>
-    `;
-    document.body.appendChild(modal);
-
-    document.getElementById('modalConfirmYes').onclick = () => {
-        modal.remove();
-
+    showConfirmModal("Zakończyć i zapisać ten trening?", () => {
         // 1. Zakończenie timerów
         if (masterTimerInterval) clearInterval(masterTimerInterval);
         if (restTimerInterval) clearInterval(restTimerInterval);
@@ -678,11 +654,8 @@ document.getElementById('finishWorkoutBtn').onclick = () => {
         saveState();
         renderLogs();
         renderDayList();
-        showPanel('panel-main');
-    };
-    document.getElementById('modalConfirmNo').onclick = () => {
-        modal.remove();
-    };
+        showPanel('panel-logs'); // Przejdź do logów po zakończeniu
+    });
 };
 
 // --- Historia i Logi ---
@@ -690,7 +663,7 @@ document.getElementById('finishWorkoutBtn').onclick = () => {
 function renderLogs() {
   logArea.innerHTML = '';
   if (state.logs.length === 0) {
-     logArea.innerHTML = '<p style="color:var(--muted)">Brak zapisanych treningów w historii.</p>';
+     logArea.innerHTML = '<p style="color:var(--muted); text-align: center;">Brak zapisanych treningów w historii.</p>';
      return;
   }
   
@@ -707,7 +680,7 @@ function renderLogs() {
         <span class="log-toggle">▶</span>
       </div>
       <div class="log-details-hidden" style="display:none;">
-        <p style="font-weight:bold; margin-bottom: 5px;">Ćwiczenia:</p>
+        <p style="font-weight:bold; margin-bottom: 5px; margin-top: 10px; border-top: 1px dashed var(--muted); padding-top: 10px;">Ćwiczenia:</p>
         <ul style="list-style-type: none; padding-left: 0;">
           ${log.exercises.map(ex => `
             <li class="exercise-detail">
@@ -741,20 +714,14 @@ function renderLogs() {
 // --- Import/Eksport i czyszczenie danych ---
 
 document.getElementById('exportBtn').onclick = () => {
-    // Zastąpienie alert() modalem
     if (!state.logs || state.logs.length === 0) {
-        const modal = document.createElement('div');
-        modal.className = 'modal-message';
-        modal.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);padding:20px;background:white;border-radius:10px;box-shadow:0 0 20px rgba(0,0,0,0.5);z-index:100;';
-        modal.innerHTML = '<strong>Brak danych do eksportu.</strong>';
-        document.body.appendChild(modal);
-        setTimeout(() => modal.remove(), 3000);
+        showErrorModal("Brak danych do eksportu.", 'info');
         return;
     }
     
-    const blob = new Blob([JSON.stringify(state.logs)], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify(state.logs, null, 2)], { type: 'application/json' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-    a.download = `${currentUserEmail.split('@')[0]}_trening_logs_v5.json`; a.click();
+    a.download = `${currentUserEmail.split('@')[0]}_trening_logs.json`; a.click();
 }
 document.getElementById('importBtn').onclick = () => document.getElementById('fileInput').click();
 document.getElementById('fileInput').onchange = e => {
@@ -765,60 +732,27 @@ document.getElementById('fileInput').onchange = e => {
       const importedLogs = JSON.parse(reader.result);
       if (Array.isArray(importedLogs)) {
         state.logs = importedLogs; 
-        await saveState(); // Zapisz zaimportowane dane do chmury
+        await saveState(); 
         renderLogs(); 
-        // Zastąpienie alert() modalem
-        const modal = document.createElement('div');
-        modal.className = 'modal-message';
-        modal.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);padding:20px;background:white;border-radius:10px;box-shadow:0 0 20px rgba(0,0,0,0.5);z-index:100;';
-        modal.innerHTML = '<strong>Zaimportowano dane do chmury.</strong>';
-        document.body.appendChild(modal);
-        setTimeout(() => modal.remove(), 3000);
-
+        showErrorModal("Zaimportowano dane do chmury.", 'success');
         updateStatsChart();
       } else { 
-        // Zastąpienie alert() modalem
-        const modal = document.createElement('div');
-        modal.className = 'modal-message';
-        modal.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);padding:20px;background:white;border-radius:10px;box-shadow:0 0 20px rgba(0,0,0,0.5);z-index:100;';
-        modal.innerHTML = '<strong>Nieprawidłowy format pliku JSON.</strong>';
-        document.body.appendChild(modal);
-        setTimeout(() => modal.remove(), 3000);
+        showErrorModal("Nieprawidłowy format pliku JSON.", 'error');
       }
     } catch (err) { 
-        // Zastąpienie alert() modalem
-        const modal = document.createElement('div');
-        modal.className = 'modal-message';
-        modal.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);padding:20px;background:white;border-radius:10px;box-shadow:0 0 20px rgba(0,0,0,0.5);z-index:100;';
-        modal.innerHTML = `<strong>Błąd podczas odczytu pliku: ${err.message}</strong>`;
-        document.body.appendChild(modal);
-        setTimeout(() => modal.remove(), 3000);
+        showErrorModal(`Błąd podczas odczytu pliku: ${err.message}`, 'error');
     }
   }
   reader.readAsText(file);
 }
 document.getElementById('clearHistory').onclick = () => {
-    // Zastąpienie confirm() modalem
-    const modal = document.createElement('div');
-    modal.className = 'modal-confirm';
-    modal.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);padding:20px;background:white;border-radius:10px;box-shadow:0 0 20px rgba(0,0,0,0.5);z-index:100; text-align: center;';
-    modal.innerHTML = `
-        <p>Wyczyścić całą historię treningów dla Twojego konta? Dane te zostaną usunięte z chmury!</p>
-        <button id="modalConfirmYes" class="btn-danger" style="margin-right: 10px;">Tak, wyczyść</button>
-        <button id="modalConfirmNo" class="btn-secondary">Nie</button>
-    `;
-    document.body.appendChild(modal);
-
-    document.getElementById('modalConfirmYes').onclick = () => {
-        modal.remove();
+    showConfirmModal("Wyczyścić całą historię treningów dla Twojego konta? Dane te zostaną usunięte z chmury!", () => {
         state.logs = []; 
         saveState(); 
         renderLogs(); 
         updateStatsChart();
-    };
-    document.getElementById('modalConfirmNo').onclick = () => {
-        modal.remove();
-    };
+        showErrorModal("Historia wyczyszczona.", 'success');
+    });
 }
 
 // --- Statystyki ---
@@ -826,8 +760,18 @@ function initStatsChart() {
   const ctx = document.getElementById('statsChart').getContext('2d');
   statsChart = new Chart(ctx, {
     type: 'bar',
-    data: { labels: [], datasets: [{ label: 'Objętość treningowa (kg)', data: [], backgroundColor: '#ff5722' }] },
-    options: { responsive: true, scales: { y: { beginAtZero: true } } }
+    data: { labels: [], datasets: [{ label: 'Objętość treningowa (kg)', data: [], backgroundColor: 'var(--accent)' }] },
+    options: { 
+        responsive: true, 
+        maintainAspectRatio: false,
+        scales: { 
+            y: { beginAtZero: true, title: { display: true, text: 'Objętość (kg)' } },
+            x: { title: { display: true, text: 'Data' } }
+        },
+        plugins: {
+            legend: { display: false }
+        }
+    }
   });
 }
 
@@ -845,10 +789,12 @@ function updateStatsChart() {
       return exAcc + exerciseVolume;
     }, 0);
 
-    if (!acc[date]) {
-      acc[date] = 0;
+    if (totalVolume > 0) { // Zliczaj tylko, jeśli objętość jest większa niż 0
+        if (!acc[date]) {
+          acc[date] = 0;
+        }
+        acc[date] += totalVolume;
     }
-    acc[date] += totalVolume;
     return acc;
   }, {});
 
@@ -856,11 +802,14 @@ function updateStatsChart() {
   const sortedDates = Object.keys(volumeByDate).sort();
   statsChart.data.labels = sortedDates;
   statsChart.data.datasets[0].data = sortedDates.map(date => volumeByDate[date]);
+  
+  // Zaktualizuj kolor tła na wykresie zgodnie z motywem
+  const accentColor = getComputedStyle(document.body).getPropertyValue('--accent');
+  statsChart.data.datasets[0].backgroundColor = accentColor;
+  
   statsChart.update();
 }
 
 // --- Start Aplikacji ---
-document.addEventListener('DOMContentLoaded', () => {
-    // Na start, wymuś pokazanie panelu logowania
-    showPanel('panel-auth');
-});
+// Logika startu przeniesiona do listenera auth.onAuthStateChanged w index.html
+// lub do DOMContentLoaded w przypadku braku Firebase.

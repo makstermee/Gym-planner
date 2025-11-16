@@ -1,176 +1,870 @@
-<!DOCTYPE html>
-<html lang="pl">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Trening Pro 💪</title>
-<link rel="stylesheet" href="style.css">
-<!-- KONIECZNE IMPORY FIREBASE Z CDN -->
-<!-- WAŻNE: W tym środowisku używamy CDN i globalnych zmiennych 'firebase' -->
-<script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js"></script>
-<script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js"></script>
-<script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script>
-  // Zmienne globalne dostarczane przez Canvas
-  const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
-  const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : '';
-  const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+// Używa globalnych zmiennych 'auth', 'db' i 'app' zainicjowanych w index.html
+// Sprawdzamy, czy zostały poprawnie zainicjowane
+if (typeof auth === 'undefined' || typeof db === 'undefined') {
+    console.error("CRITICAL: Firebase Auth/DB objects are undefined. Check index.html initialization.");
+}
 
-  // Inicjalizacja Firebase i globalne zmienne (WAŻNE!)
-  let app, auth, db;
-  
-  if (Object.keys(firebaseConfig).length > 0) {
-    // Używamy globalnej zmiennej 'firebase' z CDN
-    app = firebase.initializeApp(firebaseConfig);
-    auth = firebase.auth();
-    db = firebase.database();
-    
-    // Autoryzacja custom tokenem (wymagane przez środowisko Canvas)
-    // UWAGA: Logika autoryzacji tokenem oraz onAuthStateChanged jest teraz głównie w app.js dla lepszej kontroli.
-    
-  } else {
-    // Fallback w przypadku braku konfiguracji Firebase
-    console.error("Firebase is not configured. Data persistence will be unavailable.");
-    // Zapewniamy obiekty mockujące, aby app.js się nie zawiesił
-    window.auth = { onAuthStateChanged: (callback) => callback(null), signOut: async () => {}, signInWithEmailAndPassword: async () => {}, createUserWithEmailAndPassword: async () => {} };
-    window.db = { ref: () => ({ once: async () => ({ val: () => null }), set: async () => {} }) };
+// --- Struktury Danych i Stany ---
+
+const defaultUserState = {
+  "theme": "light",
+  "plans": {
+    "Poniedziałek": [], "Wtorek": [], "Środa": [],
+    "Czwartek": [], "Piątek": [], "Sobota": [], "Niedziela": []
+  },
+  "logs": [],
+  "activeWorkout": {
+    "isActive": false,
+    "dayName": null,
+    "startTime": null,
+    "exercises": []
   }
-</script>
-</head>
-<body>
+};
 
-<header class="top">
-  <h1>Trening Pro<span id="welcomeMsg"></span></h1>
-  <div id="masterTimerDisplay" class="master-timer" style="display:none;">00:00:00</div>
-</header>
+let state = JSON.parse(JSON.stringify(defaultUserState)); // Aktualny stan użytkownika
+let currentUserId = null;
+let currentUserEmail = null;
+let masterTimerInterval = null; // Interwał globalnego timera
+let restTimerInterval = null; // Interwał timera odpoczynku
+let currentRestDisplay = null; // Element DOM timera odpoczynku
 
-<main class="container">
+// --- Zmienne globalne DOM ---
+const panels = document.querySelectorAll('.panel');
+const welcomeMsg = document.getElementById('welcomeMsg');
+const dayList = document.getElementById('dayList');
+const logArea = document.getElementById('logArea');
+const masterTimerDisplay = document.getElementById('masterTimerDisplay');
+const authError = document.getElementById('authError');
+const loggedUserEmailDisplay = document.getElementById('loggedUserEmailDisplay');
+const currentAuthStatus = document.getElementById('currentAuthStatus');
+const authForm = document.getElementById('authForm');
+const logoutBtn = document.getElementById('logoutBtn');
 
-  <!-- Panel: Autoryzacja -->
-  <section id="panel-auth" class="panel">
-    <h2>Zarządzanie Kontem 🔑</h2>
-    <div id="authStatusArea" style="text-align: center; margin-bottom: 20px;">
-        <p id="currentAuthStatus" style="font-weight: bold; color: var(--text);"></p>
-        <p id="authError" style="color: var(--danger); font-weight: bold;"></p>
-        <button id="logoutBtn" class="btn-danger" style="display: none; width: 100%;">Wyloguj się</button>
-    </div>
+let statsChart = null;
+let currentDay = null;
 
-    <!-- Formularz Logowania/Rejestracji -->
-    <div id="authForm" style="border: 1px solid var(--muted); padding: 15px; border-radius: 10px;">
-        <p style="text-align: center; color: var(--muted); margin-top: 0;">Zaloguj się, aby zapisywać plany i logi w chmurze.</p>
-        <input id="authEmail" type="email" placeholder="E-mail" required />
-        <input id="authPassword" type="password" placeholder="Hasło (min. 6 znaków)" required />
-        
-        <div class="button-row" style="margin-top: 20px;">
-          <button id="loginBtn" class="btn-success">Zaloguj</button>
-          <button id="registerBtn" class="btn-secondary">Zarejestruj</button>
+
+// --- Funkcje pomocnicze UI (Modale) ---
+
+/**
+ * Wyświetla prosty modal z komunikatem błędu/sukcesu.
+ * @param {string} message Treść komunikatu.
+ * @param {string} type Typ (success/error/info)
+ */
+function showErrorModal(message, type = 'error') {
+    const modal = document.createElement('div');
+    modal.className = 'modal-message';
+    
+    const bgColor = type === 'error' ? 'var(--danger)' : type === 'success' ? 'var(--success)' : 'var(--accent)';
+    modal.style.background = bgColor;
+    modal.innerHTML = `<strong>${message}</strong>`;
+    
+    document.body.appendChild(modal);
+    setTimeout(() => modal.remove(), 3000);
+}
+
+/**
+ * Wyświetla modal z opcją Tak/Nie
+ * @param {string} message Treść pytania
+ * @param {function} onConfirm Funkcja wywoływana po "Tak"
+ * @param {function} onCancel Funkcja wywoływana po "Nie"
+ */
+function showConfirmModal(message, onConfirm, onCancel = () => {}) {
+    const modal = document.createElement('div');
+    modal.className = 'modal-confirm';
+    modal.innerHTML = `
+        <p>${message}</p>
+        <div class="button-row" style="margin-bottom: 0;">
+            <button id="modalConfirmYes" class="btn-success" style="margin-right: 10px;">Tak</button>
+            <button id="modalConfirmNo" class="btn-secondary">Nie</button>
         </div>
-    </div>
-  </section>
+    `;
+    document.body.appendChild(modal);
 
-  <!-- Panel: Główny (Lista dni) -->
-  <section id="panel-main" class="panel">
-    <h2>Plany Treningowe 📅</h2>
-    <div id="dayList" class="day-list">
-      <!-- Tutaj wylądują przyciski dni tygodnia generowane przez JS -->
-    </div>
-  </section>
+    document.getElementById('modalConfirmYes').onclick = () => {
+        modal.remove();
+        onConfirm();
+    };
+    document.getElementById('modalConfirmNo').onclick = () => {
+        modal.remove();
+        onCancel();
+    };
+}
+
+
+// --- Obsługa Bazy Danych (Firebase Realtime Database) ---
+
+/** Zwraca referencję do danych zalogowanego użytkownika w bazie Firebase. */
+function getDbRef() {
+    if (!currentUserId || !db) return null;
+    // Ścieżka: /artifacts/{appId}/users/{userId}/data
+    return db.ref(`artifacts/${appId}/users/${currentUserId}/data`);
+}
+
+/** Zapisuje aktualny stan 'state' do Firebase. */
+async function saveState() {
+    const dbRef = getDbRef();
+    if (!dbRef) {
+        // Zapisywanie jest niemożliwe bez zalogowania (i ID użytkownika)
+        return; 
+    }
+
+    const stateToSave = JSON.parse(JSON.stringify(state)); 
+
+    try {
+        await dbRef.set(stateToSave);
+        console.log("Stan zapisany pomyślnie.");
+    } catch (error) {
+        console.error("Błąd zapisu danych do Firebase:", error);
+        showErrorModal("Błąd zapisu danych do chmury.", 'error');
+    }
+}
+
+/** Wczytuje stan z Firebase po zalogowaniu i inicjuje aplikację. */
+async function loadState(userId, email) {
+    currentUserId = userId;
+    currentUserEmail = email;
+    loggedUserEmailDisplay.textContent = email; 
+    
+    // Uaktualnij status w panelu auth
+    currentAuthStatus.textContent = `Jesteś zalogowany jako: ${email}`;
+    authForm.style.display = 'none';
+    logoutBtn.style.display = 'block';
+
+    const dbRef = getDbRef();
+    if (!dbRef) {
+        // Powinno się zdarzyć tylko, jeśli Firebase nie jest skonfigurowane
+        initAppUI(); 
+        return;
+    }
+
+    try {
+        // Używamy once('value'), aby wczytać dane jednorazowo
+        const snapshot = await dbRef.once('value');
+        const userData = snapshot.val();
+        
+        if (userData) {
+            // Wczytaj dane, ale upewnij się, że są zgodne ze strukturą (np. plany na wszystkie dni)
+            state = { ...defaultUserState, ...userData };
+            state.plans = { ...defaultUserState.plans, ...(userData.plans || {}) };
+        } else {
+            // Pierwsze logowanie lub brak danych - zapisz domyślny stan
+            state = JSON.parse(JSON.stringify(defaultUserState));
+            await saveState(); 
+        }
+
+        // Kontynuuj inicjalizację aplikacji po wczytaniu danych
+        initAppUI();
+    } catch (error) {
+        console.error("Błąd wczytywania danych z Firebase:", error);
+        showErrorModal("Błąd wczytywania danych z chmury.", 'error');
+        initAppUI(); 
+    }
+}
+
+// --- Autoryzacja i Logowanie (Firebase Auth) ---
+
+document.getElementById('loginBtn').onclick = async () => {
+    const email = document.getElementById('authEmail').value;
+    const password = document.getElementById('authPassword').value;
+    authError.textContent = '';
+    
+    if (!email || !password) {
+        return authError.textContent = "Wprowadź e-mail i hasło.";
+    }
+
+    try {
+        document.getElementById('loginBtn').disabled = true;
+        document.getElementById('registerBtn').disabled = true;
+        
+        // Logowanie
+        await auth.signInWithEmailAndPassword(email, password);
+        
+        showErrorModal("Zalogowano pomyślnie!", 'success');
+        // onAuthStateChanged zajmie się przejściem do 'panel-main'
+
+    } catch (error) {
+        let message = "Wystąpił błąd logowania. Spróbuj ponownie.";
+        if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password') {
+            message = "Nieprawidłowy e-mail lub hasło.";
+        } else if (error.code === 'auth/too-many-requests') {
+            message = "Zbyt wiele prób. Spróbuj później.";
+        } else {
+             message = `Błąd: ${error.message}`;
+        }
+        authError.textContent = message;
+    } finally {
+        document.getElementById('loginBtn').disabled = false;
+        document.getElementById('registerBtn').disabled = false;
+    }
+};
+
+document.getElementById('registerBtn').onclick = async () => {
+    const email = document.getElementById('authEmail').value;
+    const password = document.getElementById('authPassword').value;
+    authError.textContent = '';
+
+    if (!email || password.length < 6) {
+        return authError.textContent = "E-mail jest wymagany, a hasło musi mieć min. 6 znaków.";
+    }
+
+    try {
+        document.getElementById('loginBtn').disabled = true;
+        document.getElementById('registerBtn').disabled = true;
+        
+        // Rejestracja
+        await auth.createUserWithEmailAndPassword(email, password);
+        
+        showErrorModal("Rejestracja udana! Zostałeś automatycznie zalogowany.", 'success');
+        // onAuthStateChanged zajmie się przejściem do 'panel-main'
+
+    } catch (error) {
+        let message = "Błąd rejestracji.";
+        if (error.code === 'auth/email-already-in-use') {
+            message = "Ten e-mail jest już zajęty. Spróbuj się zalogować.";
+        } else if (error.code === 'auth/weak-password') {
+             message = "Hasło jest za słabe (min. 6 znaków).";
+        } else {
+             message = `Błąd: ${error.message}`;
+        }
+        authError.textContent = message;
+    } finally {
+         document.getElementById('loginBtn').disabled = false;
+         document.getElementById('registerBtn').disabled = false;
+    }
+};
+
+document.getElementById('logoutBtn').onclick = async () => {
+    showConfirmModal("Czy na pewno chcesz się wylogować?", async () => {
+        // Zakończenie timerów i wyczyszczenie UI
+        if (masterTimerInterval) clearInterval(masterTimerInterval);
+        if (restTimerInterval) clearInterval(restTimerInterval);
+        masterTimerDisplay.style.display = 'none';
+        
+        if (auth) {
+            await auth.signOut();
+        }
+        // onAuthStateChanged zajmie się resztą
+    });
+};
+
+// --- Główny Listener Firebase (Uruchomienie Aplikacji) ---
+
+document.addEventListener('DOMContentLoaded', () => {
+  if (auth) {
+    // 1. Spróbuj zalogować custom tokenem (wymóg środowiska Canvas)
+    if (initialAuthToken) {
+        auth.signInWithCustomToken(initialAuthToken)
+            .then(userCredential => {
+                console.log("Canvas initial sign-in successful:", userCredential.user.uid);
+            })
+            .catch(error => {
+                // Jeśli token wygasł lub jest błąd, spróbuj zalogować anonimowo
+                console.warn("Canvas custom token sign-in failed:", error.message);
+                auth.signInAnonymously().catch(anonError => {
+                    console.error("Anonymous sign-in failed:", anonError);
+                });
+            });
+    } else {
+        // 2. Jeśli brak tokena, zaloguj anonimowo
+        auth.signInAnonymously().catch(anonError => {
+            console.error("Anonymous sign-in failed:", anonError);
+        });
+    }
+
+    // 3. Główny listener do zarządzania stanem użytkownika
+    auth.onAuthStateChanged(user => {
+        authError.textContent = ''; // Wyczyść błędy
+        
+        if (user && user.email) {
+            // Użytkownik ZALOGOWANY za pomocą email/hasło (lub tokenem)
+            loadState(user.uid, user.email);
+            showPanel('panel-main');
+        } else {
+             // Użytkownik WYLOWOGANY (lub zalogowany anonimowo / przed zalogowaniem)
+            currentUserId = null;
+            currentUserEmail = null;
+            state = JSON.parse(JSON.stringify(defaultUserState)); // Wyczyść stan lokalny
+            loggedUserEmailDisplay.textContent = 'Niezalogowany';
+            
+            // Uaktualnij status w panelu auth
+            currentAuthStatus.textContent = 'Status: Wylogowany. Zaloguj się, aby kontynuować.';
+            authForm.style.display = 'block';
+            logoutBtn.style.display = 'none';
+
+            // Wymuś przejście do panelu Auth
+            showPanel('panel-auth'); 
+            updateWelcome();
+            
+            // Wyłącz timer
+            if (masterTimerInterval) clearInterval(masterTimerInterval);
+            if (restTimerInterval) clearInterval(restTimerInterval);
+            masterTimerDisplay.style.display = 'none';
+        }
+    });
+
+  } else {
+      // Brak konfiguracji Firebase - Tryb Lokalny jest niemożliwy z logiką zapisu do DB
+      currentAuthStatus.textContent = 'Brak konfiguracji Firebase.';
+      authError.textContent = "Aplikacja wymaga konfiguracji chmury. Opcje logowania i zapisu są niedostępne.";
+      authForm.style.display = 'none';
+      logoutBtn.style.display = 'none';
+      showPanel('panel-auth');
+  }
+});
+
+
+// --- Funkcja inicjalizująca interfejs (po zalogowaniu) ---
+
+function initAppUI() {
+    // 1. Sprawdzenie wznowienia treningu
+    if (state.activeWorkout.isActive) {
+        if (masterTimerInterval) clearInterval(masterTimerInterval); 
+        
+        showConfirmModal("Wykryto niezakończony trening. Chcesz go wznowić?", () => {
+            // Wznów
+            masterTimerInterval = setInterval(updateMasterTimer, 1000);
+            masterTimerDisplay.style.display = 'block';
+            renderActiveWorkout();
+            showPanel('panel-active-workout');
+        }, () => {
+            // Anuluj
+            state.activeWorkout = defaultUserState.activeWorkout;
+            saveState(); 
+            showPanel('panel-main');
+        });
+
+    } else {
+        // Jeśli nie ma aktywnego treningu, pokaż główny panel
+        showPanel('panel-main');
+    }
+
+    // 2. Renderowanie UI
+    updateWelcome();
+    applyTheme();
+    renderDayList();
+    renderLogs();
+    // Chart zostanie zainicjowany przy pierwszym wejściu do panel-stats
+}
+
+// --- Nawigacja ---
+
+function showPanel(panelId) {
+  // Wymuś logowanie, jeśli panel nie jest panelem autoryzacji
+  if (!currentUserId && panelId !== 'panel-auth') {
+    // Nie pokazujemy modala, jeśli już jesteśmy w panelu auth, żeby uniknąć pętli
+    if (document.getElementById('panel-auth').classList.contains('active')) {
+        return;
+    }
+    showErrorModal("Musisz być zalogowany, aby korzystać z tej sekcji.", 'info');
+    return showPanel('panel-auth'); 
+  }
+
+  // Wymuś pozostanie w aktywnym treningu
+  if (state.activeWorkout.isActive && panelId !== 'panel-active-workout' && panelId !== 'panel-auth') {
+    showErrorModal('Najpierw zakończ aktywny trening!', 'info');
+    return;
+  }
   
-  <!-- Panel: Szczegóły Planu (Day Details) -->
-  <section id="panel-plan-details" class="panel">
-    <h2 id="planDetailsTitle">Plan: Poniedziałek</h2>
-    <div id="planDetailsList" class="exercise-list">
-      <!-- Lista ćwiczeń w planie -->
-    </div>
-    <div class="button-row" style="margin-top: 20px;">
-      <button id="editPlanBtn" class="btn-secondary">Edytuj plan</button>
-      <button id="startWorkoutBtn" class="btn-success">Rozpocznij trening</button>
-    </div>
-    <button id="backToMainBtn" class="btn-secondary" style="margin-top: 10px; width: 100%;">Powrót do listy dni</button>
-  </section>
+  panels.forEach(p => p.classList.remove('active'));
+  document.getElementById(panelId).classList.add('active');
 
-  <!-- Panel: Edytor Planu -->
-  <section id="panel-edit-plan" class="panel">
-    <h2 id="editPlanTitle">Edytuj: Dzień</h2>
+  // Podświetl aktywny przycisk nawigacji
+  document.querySelectorAll('.bottom-nav button').forEach(btn => {
+      btn.classList.remove('active');
+      if (btn.dataset.panel === panelId) {
+          btn.classList.add('active');
+      }
+  });
+
+
+  if (panelId === 'panel-stats') {
+    if (!statsChart) initStatsChart();
+    updateStatsChart();
+  }
+}
+
+document.querySelectorAll('.bottom-nav button').forEach(btn => {
+  btn.onclick = () => showPanel(btn.dataset.panel);
+});
+
+document.getElementById('backToMainBtn').onclick = () => showPanel('panel-main');
+document.getElementById('savePlanChangesBtn').onclick = () => {
+  saveState();
+  renderDayList();
+  showPlanDetails(currentDay);
+};
+
+
+// --- Ustawienia i Motyw ---
+
+function updateWelcome() {
+    // Wyświetla imię użytkownika (część e-maila przed @)
+    const emailPart = currentUserEmail ? currentUserEmail.split('@')[0] : '';
+    welcomeMsg.textContent = emailPart ? `, ${emailPart}!` : '';
+}
+
+const themeSelect = document.getElementById('themeSelect');
+function applyTheme() { 
+  document.body.classList.toggle('dark', state.theme === 'dark'); 
+  themeSelect.value = state.theme;
+}
+
+themeSelect.onchange = e => { 
+    state.theme = e.target.value; 
+    applyTheme(); 
+    saveState(); 
+}
+
+// --- Logika Planów Treningowych ---
+
+function renderDayList() {
+  dayList.innerHTML = '';
+  // Iterujemy po domyślnych kluczach planów
+  Object.keys(defaultUserState.plans).forEach(dayName => {
+    // Upewniamy się, że plan dla danego dnia istnieje w bieżącym stanie
+    const plan = state.plans[dayName] || [];
+
+    const btn = document.createElement('button');
+    btn.className = 'day-btn';
+    btn.innerHTML = `<span>${dayName}</span><span>(${plan.length} ćw.)</span>`;
+    btn.onclick = () => showPlanDetails(dayName);
+    dayList.appendChild(btn);
+  });
+}
+
+function showPlanDetails(dayName) {
+  currentDay = dayName;
+  document.getElementById('planDetailsTitle').textContent = `Plan: ${dayName}`;
+  const list = document.getElementById('planDetailsList');
+  list.innerHTML = '';
+
+  const plan = state.plans[dayName] || [];
+
+  if (plan.length === 0) {
+    list.innerHTML = '<p style="color:var(--muted); text-align: center;">Brak ćwiczeń w planie. Dodaj je w edytorze.</p>';
+  }
+
+  plan.forEach(ex => {
+    const div = document.createElement('div');
+    div.className = 'card';
+    div.innerHTML = `
+      <div>
+        <strong>${ex.name}</strong><br>
+        <span>Cel: ${ex.targetSets} serie x ${ex.targetReps} powt.</span>
+      </div>
+    `;
+    list.appendChild(div);
+  });
+
+  document.getElementById('editPlanBtn').onclick = () => showPlanEditor(dayName);
+  document.getElementById('startWorkoutBtn').onclick = () => startWorkout(dayName);
+
+  showPanel('panel-plan-details');
+}
+
+function showPlanEditor(dayName) {
+  currentDay = dayName;
+  document.getElementById('editPlanTitle').textContent = `Edytuj: ${dayName}`;
+  renderEditPlanList();
+  
+  document.getElementById('addExerciseBtn').onclick = () => {
+    const name = document.getElementById('exName').value.trim();
+    const sets = +document.getElementById('exTargetSets').value;
+    const reps = +document.getElementById('exTargetReps').value;
+
+    if (!name || sets < 1 || reps < 1) {
+        showErrorModal("Wypełnij wszystkie pola poprawnymi wartościami (min. 1).");
+        return;
+    }
+
+    // Upewnienie się, że plan dla tego dnia istnieje
+    if (!state.plans[dayName]) {
+        state.plans[dayName] = [];
+    }
+
+    state.plans[dayName].push({ name: name, targetSets: sets, targetReps: reps });
+    saveState();
+    renderEditPlanList();
+    document.getElementById('exName').value = '';
+    document.getElementById('exTargetSets').value = '3';
+    document.getElementById('exTargetReps').value = '10';
+  };
+
+  showPanel('panel-edit-plan');
+}
+
+function renderEditPlanList() {
+  const list = document.getElementById('editPlanList');
+  list.innerHTML = '';
+  const plan = state.plans[currentDay] || [];
+
+  plan.forEach((ex, index) => {
+    const div = document.createElement('div');
+    div.className = 'card';
+    div.innerHTML = `
+      <div>
+        <strong>${ex.name}</strong><br>
+        <span>Cel: ${ex.targetSets} x ${ex.targetReps}</span>
+      </div>
+      <button class="btn-danger" data-index="${index}" style="flex: 0 0 auto; width: 60px; padding: 5px;">Usuń</button>
+    `;
+    div.querySelector('.btn-danger').onclick = () => {
+      showConfirmModal(`Usunąć "${ex.name}" z planu?`, () => {
+        state.plans[currentDay].splice(index, 1);
+        saveState();
+        renderEditPlanList();
+        renderDayList();
+      });
+    };
+    list.appendChild(div);
+  });
+}
+
+// --- Logika Aktywnego Treningu ---
+
+function startWorkout(dayName) {
+  const plan = state.plans[dayName] || [];
+
+  if (plan.length === 0) {
+    showErrorModal("Ten plan jest pusty. Najpierw dodaj ćwiczenia, aby zacząć.", 'info');
+    return;
+  }
+  
+  showConfirmModal(`Rozpocząć trening: ${dayName}?`, () => {
+    state.activeWorkout.isActive = true;
+    state.activeWorkout.dayName = dayName;
+    state.activeWorkout.startTime = Date.now();
+    state.activeWorkout.exercises = plan.map(ex => ({
+        ...ex,
+        loggedSets: []
+    }));
+
+    // Wystartuj główny timer
+    if (masterTimerInterval) clearInterval(masterTimerInterval);
+    masterTimerInterval = setInterval(updateMasterTimer, 1000);
     
-    <h3>Dodaj Ćwiczenie</h3>
-    <div class="input-row">
-      <input id="exName" placeholder="Nazwa ćwiczenia (np. Przysiady)" required />
-      <input id="exTargetSets" type="number" min="1" value="3" placeholder="Serie" required style="flex: 0 0 80px;" />
-      <input id="exTargetReps" type="number" min="1" value="10" placeholder="Powt." required style="flex: 0 0 80px;" />
-      <button id="addExerciseBtn" style="flex: 0 0 80px;">Dodaj</button>
-    </div>
+    masterTimerDisplay.style.display = 'block';
+    updateMasterTimer();
+    renderActiveWorkout();
+    showPanel('panel-active-workout');
+    saveState();
+  });
+}
+
+function renderActiveWorkout() {
+  document.getElementById('activeWorkoutTitle').textContent = `Trening: ${state.activeWorkout.dayName}`;
+  const list = document.getElementById('activeWorkoutList');
+  list.innerHTML = '';
+
+  state.activeWorkout.exercises.forEach((ex, exIndex) => {
+    const card = document.createElement('div');
+    card.className = 'workout-card';
+
+    let setsHTML = ex.loggedSets.map((set, setIndex) => `
+      <div class="logged-set" data-set-index="${setIndex}">
+        <span class="set-number">Seria ${setIndex + 1}:</span>
+        <span class="set-data">${set.weight} kg x ${set.reps} powt.</span>
+        <span class="set-remove" data-ex-index="${exIndex}" data-set-index="${setIndex}">[x]</span>
+      </div>
+    `).join('');
+
+    const lastWeight = ex.loggedSets.slice(-1)[0]?.weight || '';
+
+    card.innerHTML = `
+      <h3>${ex.name}</h3>
+      <small>Cel: ${ex.targetSets} serie x ${ex.targetReps} powt.</small>
+      
+      <div class="logged-sets-list">${setsHTML}</div>
+      
+      <form class="log-set-form" data-ex-index="${exIndex}">
+        <input type="number" class="log-weight" placeholder="Ciężar (kg)" value="${lastWeight}" required>
+        <input type="number" class="log-reps" placeholder="Powtórzenia" required>
+        <button type="submit" class="btn-success" style="flex: 0 0 100px;">Zapisz</button>
+      </form>
+      
+      <div class="rest-timer-section">
+        <span class="rest-timer-display" id="rest-timer-${exIndex}">00:00</span>
+        <button class="start-rest-btn btn-secondary" data-ex-index="${exIndex}" data-seconds="60">60s</button>
+        <button class="start-rest-btn btn-secondary" data-ex-index="${exIndex}" data-seconds="90">90s</button>
+        <button class="start-rest-btn btn-secondary" data-ex-index="${exIndex}" data-seconds="120">120s</button>
+      </div>
+    `;
+    list.appendChild(card);
+  });
+
+  list.querySelectorAll('.log-set-form').forEach(form => {
+    form.onsubmit = (e) => {
+      e.preventDefault();
+      const exIndex = e.target.dataset.exIndex;
+      const weightInput = e.target.querySelector('.log-weight');
+      const repsInput = e.target.querySelector('.log-reps');
+      
+      const weight = weightInput.value;
+      const reps = repsInput.value;
+      
+      if (weight && reps && +weight >= 0 && +reps >= 1) {
+        logSet(exIndex, +weight, +reps);
+        repsInput.value = ''; // Wyczyść tylko pole powtórzeń
+        startRestTimer(exIndex, 60); // Standardowy timer 60s
+      } else {
+        showErrorModal("Podaj poprawne wartości dla ciężaru (min. 0) i powtórzeń (min. 1).");
+      }
+    };
+  });
+
+  list.querySelectorAll('.start-rest-btn').forEach(btn => {
+    btn.onclick = () => {
+      const exIndex = btn.dataset.exIndex;
+      const seconds = +btn.dataset.seconds;
+      startRestTimer(exIndex, seconds);
+    };
+  });
+
+  list.querySelectorAll('.set-remove').forEach(btn => {
+    btn.onclick = () => removeSet(+btn.dataset.exIndex, +btn.dataset.setIndex);
+  });
+}
+
+function logSet(exIndex, weight, reps) {
+  state.activeWorkout.exercises[exIndex].loggedSets.push({ weight, reps });
+  saveState();
+  renderActiveWorkout();
+}
+
+function removeSet(exIndex, setIndex) {
+    showConfirmModal("Usunąć tę serię?", () => {
+        state.activeWorkout.exercises[exIndex].loggedSets.splice(setIndex, 1);
+        saveState();
+        renderActiveWorkout();
+    });
+}
+
+function startRestTimer(exIndex, seconds) {
+  // 1. Zakończ poprzedni interwał
+  if (restTimerInterval) {
+    clearInterval(restTimerInterval);
+    if (currentRestDisplay) {
+       currentRestDisplay.style.color = 'var(--accent)'; // Reset koloru starego timera
+    }
+  }
+
+  // 2. Ustaw nowy timer
+  const displayElement = document.getElementById(`rest-timer-${exIndex}`);
+  currentRestDisplay = displayElement;
+  let secondsLeft = seconds;
+  displayElement.style.color = 'var(--danger)'; // Kolor czerwony podczas odliczania
+
+  const updateDisplay = () => {
+    const mins = Math.floor(secondsLeft / 60).toString().padStart(2, '0');
+    const secs = (secondsLeft % 60).toString().padStart(2, '0');
+    displayElement.textContent = `${mins}:${secs}`;
+  };
+  updateDisplay();
+
+  restTimerInterval = setInterval(() => {
+    secondsLeft--;
+    updateDisplay();
+
+    if (secondsLeft <= 0) {
+      clearInterval(restTimerInterval);
+      restTimerInterval = null;
+      displayElement.textContent = "START!";
+      displayElement.style.color = 'var(--success)'; // Kolor zielony po zakończeniu
+    }
+  }, 1000);
+}
+
+function updateMasterTimer() {
+  if (!state.activeWorkout.isActive || !state.activeWorkout.startTime) {
+    if (masterTimerInterval) clearInterval(masterTimerInterval);
+    return;
+  }
+  
+  const elapsedMs = Date.now() - state.activeWorkout.startTime;
+  const hours = Math.floor(elapsedMs / 3600000).toString().padStart(2, '0');
+  const minutes = Math.floor((elapsedMs % 3600000) / 60000).toString().padStart(2, '0');
+  const seconds = Math.floor((elapsedMs % 60000) / 1000).toString().padStart(2, '0');
+  
+  masterTimerDisplay.textContent = `${hours}:${minutes}:${seconds}`;
+}
+
+document.getElementById('finishWorkoutBtn').onclick = () => {
+    showConfirmModal("Zakończyć i zapisać ten trening?", () => {
+        // 1. Zakończenie timerów
+        if (masterTimerInterval) clearInterval(masterTimerInterval);
+        if (restTimerInterval) clearInterval(restTimerInterval);
+        
+        const finalDuration = masterTimerDisplay.textContent;
+        masterTimerDisplay.style.display = 'none';
+
+        // 2. Utwórz wpis w logu
+        const logEntry = {
+            date: new Date().toISOString().split('T')[0],
+            dayName: state.activeWorkout.dayName,
+            duration: finalDuration,
+            exercises: state.activeWorkout.exercises.filter(ex => ex.loggedSets.length > 0)
+        };
+        state.logs.push(logEntry);
+
+        // 3. Zresetuj stan aktywnego treningu
+        state.activeWorkout = defaultUserState.activeWorkout;
+
+        saveState();
+        renderLogs();
+        renderDayList();
+        showPanel('panel-logs'); // Przejdź do logów po zakończeniu
+    });
+};
+
+// --- Historia i Logi ---
+
+function renderLogs() {
+  logArea.innerHTML = '';
+  if (state.logs.length === 0) {
+     logArea.innerHTML = '<p style="color:var(--muted); text-align: center;">Brak zapisanych treningów w historii.</p>';
+     return;
+  }
+  
+  // Odwracanie kolejności, aby najnowsze były na górze
+  state.logs.slice().reverse().forEach((log) => {
+    const div = document.createElement('div');
+    div.className = 'card log-summary-card';
+
+    div.innerHTML = `
+      <div class="log-header">
+        <span class="log-summary">
+          ${log.date} - ${log.dayName} (Czas: ${log.duration})
+        </span>
+        <span class="log-toggle">▶</span>
+      </div>
+      <div class="log-details-hidden" style="display:none;">
+        <p style="font-weight:bold; margin-bottom: 5px; margin-top: 10px; border-top: 1px dashed var(--muted); padding-top: 10px;">Ćwiczenia:</p>
+        <ul style="list-style-type: none; padding-left: 0;">
+          ${log.exercises.map(ex => `
+            <li class="exercise-detail">
+              <strong>${ex.name}</strong>
+              <ul style="list-style-type: circle; margin-top: 5px; padding-left: 20px;">
+                ${ex.loggedSets.map((set, setIndex) => `
+                  <li>Seria ${setIndex + 1}: ${set.weight} kg x ${set.reps} powt.</li>
+                `).join('')}
+              </ul>
+            </li>
+          `).join('')}
+        </ul>
+      </div>
+    `;
+    logArea.appendChild(div);
+  });
+  
+  // Obsługa rozwijania szczegółów
+  document.querySelectorAll('.log-summary-card').forEach(card => {
+    card.querySelector('.log-header').onclick = () => {
+      const details = card.querySelector('.log-details-hidden');
+      const toggle = card.querySelector('.log-toggle');
+      const isHidden = details.style.display === 'none';
+      
+      details.style.display = isHidden ? 'block' : 'none';
+      toggle.textContent = isHidden ? '▼' : '▶';
+    };
+  });
+}
+
+// --- Import/Eksport i czyszczenie danych ---
+
+document.getElementById('exportBtn').onclick = () => {
+    if (!state.logs || state.logs.length === 0) {
+        showErrorModal("Brak danych do eksportu.", 'info');
+        return;
+    }
     
-    <h3>Ćwiczenia w Planie</h3>
-    <div id="editPlanList" class="exercise-list">
-      <!-- Lista ćwiczeń do edycji -->
-    </div>
+    const blob = new Blob([JSON.stringify(state.logs, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = `${currentUserEmail.split('@')[0]}_trening_logs.json`; a.click();
+}
+document.getElementById('importBtn').onclick = () => document.getElementById('fileInput').click();
+document.getElementById('fileInput').onchange = e => {
+  const file = e.target.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = async () => {
+    try {
+      const importedLogs = JSON.parse(reader.result);
+      if (Array.isArray(importedLogs)) {
+        state.logs = importedLogs; 
+        await saveState(); 
+        renderLogs(); 
+        showErrorModal("Zaimportowano dane do chmury.", 'success');
+        updateStatsChart();
+      } else { 
+        showErrorModal("Nieprawidłowy format pliku JSON.", 'error');
+      }
+    } catch (err) { 
+        showErrorModal(`Błąd podczas odczytu pliku: ${err.message}`, 'error');
+    }
+  }
+  reader.readAsText(file);
+}
+document.getElementById('clearHistory').onclick = () => {
+    showConfirmModal("Wyczyścić całą historię treningów dla Twojego konta? Dane te zostaną usunięte z chmury!", () => {
+        state.logs = []; 
+        saveState(); 
+        renderLogs(); 
+        updateStatsChart();
+        showErrorModal("Historia wyczyszczona.", 'success');
+    });
+}
 
-    <div class="button-row" style="margin-top: 20px;">
-      <button id="savePlanChangesBtn" class="btn-success">Zapisz zmiany i wróć</button>
-    </div>
-  </section>
+// --- Statystyki ---
+function initStatsChart() {
+  const ctx = document.getElementById('statsChart').getContext('2d');
+  statsChart = new Chart(ctx, {
+    type: 'bar',
+    data: { labels: [], datasets: [{ label: 'Objętość treningowa (kg)', data: [], backgroundColor: 'var(--accent)' }] },
+    options: { 
+        responsive: true, 
+        maintainAspectRatio: false,
+        scales: { 
+            y: { beginAtZero: true, title: { display: true, text: 'Objętość (kg)' } },
+            x: { title: { display: true, text: 'Data' } }
+        },
+        plugins: {
+            legend: { display: false }
+        }
+    }
+  });
+}
 
-  <!-- Panel: Aktywny Trening -->
-  <section id="panel-active-workout" class="panel">
-    <h2 id="activeWorkoutTitle">Aktywny Trening</h2>
-    <div id="activeWorkoutList" class="exercise-list">
-      <!-- Dynamiczna lista ćwiczeń z formularzem logowania serii -->
-    </div>
+function updateStatsChart() {
+  if (!statsChart || !state.logs) return;
+
+  const volumeByDate = state.logs.reduce((acc, log) => {
+    const date = log.date;
     
-    <button id="finishWorkoutBtn" class="btn-danger" style="margin-top: 20px; width: 100%;">Zakończ Trening i Zapisz Log</button>
-  </section>
+    // Obliczanie objętości (ciężar * powtórzenia) dla wszystkich serii w treningu
+    const totalVolume = log.exercises.reduce((exAcc, ex) => {
+      const exerciseVolume = ex.loggedSets.reduce((setAcc, set) => {
+        return setAcc + (set.weight * set.reps);
+      }, 0);
+      return exAcc + exerciseVolume;
+    }, 0);
 
+    if (totalVolume > 0) { // Zliczaj tylko, jeśli objętość jest większa niż 0
+        if (!acc[date]) {
+          acc[date] = 0;
+        }
+        acc[date] += totalVolume;
+    }
+    return acc;
+  }, {});
 
-  <!-- Panel: Logi (Historia) -->
-  <section id="panel-logs" class="panel">
-    <h2>Historia Logów 📜</h2>
-    <div id="logArea" class="log-area">
-      <!-- Logi treningowe -->
-    </div>
-    
-    <div class="button-row" style="margin-top: 20px;">
-      <button id="clearHistory" class="btn-danger">Wyczyść historię</button>
-      <button id="exportBtn">Eksportuj JSON</button>
-      <button id="importBtn" class="btn-secondary">Importuj JSON</button>
-      <input type="file" id="fileInput" style="display:none" accept=".json">
-    </div>
-  </section>
-
-  <!-- Panel: Statystyki -->
-  <section id="panel-stats" class="panel">
-    <h2>Statystyki 📈</h2>
-    <canvas id="statsChart" height="250"></canvas>
-    <p style="text-align: center; color: var(--muted); margin-top: 10px;">Objętość treningowa (kg * powtórzenia) w czasie.</p>
-  </section>
-
-  <!-- Panel: Ustawienia -->
-  <section id="panel-settings" class="panel">
-    <h2>Ustawienia ⚙️</h2>
-    
-    <label for="loggedUserEmailDisplay" style="font-size: 0.9em; margin-bottom: 5px;">Zalogowany jako:</label>
-    <p id="loggedUserEmailDisplay" style="font-weight: bold; margin-bottom: 20px; color: var(--accent);"></p>
-
-    <label for="themeSelect">Motyw aplikacji:</label>
-    <select id="themeSelect">
-      <option value="light">Jasny (domyślny)</option>
-      <option value="dark">Ciemny</option>
-    </select>
-  </section>
-
-</main>
-
-<!-- Dolne menu nawigacyjne -->
-<nav class="bottom-nav">
-  <button data-panel="panel-main">Plan</button>
-  <button data-panel="panel-logs">Logi</button>
-  <button data-panel="panel-stats">Statystyki</button>
-  <button data-panel="panel-settings">Ustawienia</button>
-  <button data-panel="panel-auth">Konto</button>
-</nav>
-
-<script src="app.js"></script>
-</body>
-</html>
-
+  // Sortowanie dat i przygotowanie danych do wykresu
+  const sortedDates = Object.keys(volumeByDate).sort();
+  statsChart.data.labels = sortedDates;
+  statsChart.data.datasets[0].data = sortedDates.map(date => volumeByDate[date]);
+  
+  // Zaktualizuj kolor tła na wykresie zgodnie z motywem
+  const accentColor = getComputedStyle(document.body).getPropertyValue('--accent');
+  statsChart.data.datasets[0].backgroundColor = accentColor;
+  
+  statsChart.update();
+                                 }

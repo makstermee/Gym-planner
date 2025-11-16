@@ -1,4 +1,8 @@
 // Używa globalnych zmiennych 'auth', 'db' i 'app' zainicjowanych w index.html
+// Sprawdzamy, czy zostały poprawnie zainicjowane
+if (typeof auth === 'undefined' || typeof db === 'undefined') {
+    console.error("CRITICAL: Firebase Auth/DB objects are undefined. Check index.html initialization.");
+}
 
 // --- Struktury Danych i Stany ---
 
@@ -31,11 +35,12 @@ const dayList = document.getElementById('dayList');
 const logArea = document.getElementById('logArea');
 const masterTimerDisplay = document.getElementById('masterTimerDisplay');
 const authError = document.getElementById('authError');
+const loggedUserEmailDisplay = document.getElementById('loggedUserEmailDisplay');
 let statsChart = null;
 let currentDay = null;
 
 
-// --- Funkcje pomocnicze UI ---
+// --- Funkcje pomocnicze UI (Modale) ---
 
 /**
  * Wyświetla prosty modal z komunikatem błędu/sukcesu.
@@ -47,7 +52,6 @@ function showErrorModal(message, type = 'error') {
     modal.className = 'modal-message';
     
     const bgColor = type === 'error' ? 'var(--danger)' : type === 'success' ? 'var(--success)' : 'var(--accent)';
-    // Stylizacja jest w style.css, tutaj tylko przypisanie koloru tła
     modal.style.background = bgColor;
     modal.innerHTML = `<strong>${message}</strong>`;
     
@@ -118,6 +122,7 @@ async function saveState() {
 async function loadState(userId, email) {
     currentUserId = userId;
     currentUserEmail = email;
+    loggedUserEmailDisplay.textContent = email; // Wyświetl e-mail w panelu ustawień
     const dbRef = getDbRef();
     if (!dbRef) {
         initAppUI(); // Zrób to z domyślnym stanem, jeśli DB jest niedostępna
@@ -161,7 +166,10 @@ document.getElementById('loginBtn').onclick = async () => {
 
     try {
         document.getElementById('loginBtn').disabled = true;
+        // Używamy signInWithEmailAndPassword z obiektu 'auth'
         await auth.signInWithEmailAndPassword(email, password);
+        // Po udanym logowaniu auth.onAuthStateChanged zajmie się resztą
+        showErrorModal("Zalogowano pomyślnie!", 'success');
     } catch (error) {
         let message = "Wystąpił błąd logowania.";
         if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential') {
@@ -190,8 +198,10 @@ document.getElementById('registerBtn').onclick = async () => {
 
     try {
         document.getElementById('registerBtn').disabled = true;
+        // Używamy createUserWithEmailAndPassword z obiektu 'auth'
         await auth.createUserWithEmailAndPassword(email, password);
         showErrorModal("Rejestracja udana! Zostałeś automatycznie zalogowany.", 'success');
+        // Po udanej rejestracji auth.onAuthStateChanged zajmie się resztą
     } catch (error) {
         let message = "Błąd rejestracji.";
         if (error.code === 'auth/email-already-in-use') {
@@ -215,7 +225,10 @@ document.getElementById('logoutBtn').onclick = async () => {
         
         masterTimerDisplay.style.display = 'none';
         
-        await auth.signOut();
+        // Używamy auth.signOut()
+        if (auth) {
+            await auth.signOut();
+        }
         showPanel('panel-auth');
     });
 };
@@ -226,15 +239,19 @@ if (auth) {
     auth.onAuthStateChanged(user => {
         if (user) {
             // Użytkownik ZALOGOWANY
-            document.getElementById('loggedUserEmail').textContent = user.email;
+            loggedUserEmailDisplay.textContent = user.email;
             document.getElementById('authEmail').value = ''; // Wyczyść formularz
             document.getElementById('authPassword').value = ''; 
             loadState(user.uid, user.email);
+            document.getElementById('logoutBtn').style.display = 'block';
+
         } else {
             // Użytkownik WYLOWOGANY (lub przed zalogowaniem)
             currentUserId = null;
             currentUserEmail = null;
             state = JSON.parse(JSON.stringify(defaultUserState)); // Wyczyść stan lokalny
+            loggedUserEmailDisplay.textContent = 'Niezalogowany';
+            document.getElementById('logoutBtn').style.display = 'none';
             showPanel('panel-auth'); // Pokaż panel logowania
             updateWelcome();
             // Wyłącz timer, jeśli został
@@ -244,11 +261,11 @@ if (auth) {
         }
     });
 } else {
-    // Brak konfiguracji Firebase
+    // Brak konfiguracji Firebase - Tryb Lokalny
     document.addEventListener('DOMContentLoaded', () => {
         currentUserId = 'anonymous-local';
         currentUserEmail = 'lokalny@treningpro.pl';
-        document.getElementById('loggedUserEmail').textContent = currentUserEmail;
+        loggedUserEmailDisplay.textContent = currentUserEmail;
         document.getElementById('logoutBtn').style.display = 'none';
         document.getElementById('loginBtn').style.display = 'none';
         document.getElementById('registerBtn').style.display = 'none';
@@ -296,7 +313,7 @@ function initAppUI() {
 function showPanel(panelId) {
   // Wymuś logowanie, jeśli panel nie jest panelem autoryzacji
   if (!currentUserId && panelId !== 'panel-auth') {
-    // Upewnij się, że app.js jest w pełni załadowany i auth jest dostępne
+    // Upewnij się, że auth jest dostępne przed próbą przekierowania
     if (auth) return showPanel('panel-auth'); 
   }
 
@@ -367,7 +384,6 @@ function renderDayList() {
 
     const btn = document.createElement('button');
     btn.className = 'day-btn';
-    // TUTAJ ZWERYFIKOWANY POPRAWNY ZAPIS TEKSTU W CELU ZGODNOŚCI Z iOS/Androidem
     btn.textContent = `${dayName} (${plan.length} ćw.)`;
     btn.onclick = () => showPlanDetails(dayName);
     dayList.appendChild(btn);
@@ -809,7 +825,3 @@ function updateStatsChart() {
   
   statsChart.update();
 }
-
-// --- Start Aplikacji ---
-// Logika startu przeniesiona do listenera auth.onAuthStateChanged w index.html
-// lub do DOMContentLoaded w przypadku braku Firebase.

@@ -290,8 +290,13 @@ logoutBtn.onclick = async () => {
         if (restTimerInterval) clearInterval(restTimerInterval);
         if (firestoreUnsubscribe) firestoreUnsubscribe(); 
         
-        if (window.IS_FIREBASE_CONFIGURED && auth) {
+        // POPRAWKA 1: Uproszczony warunek, aby wylogowanie zawsze działało
+        if (auth) {
             await signOut(auth);
+        } else {
+            // Awaryjne czyszczenie, jeśli auth nie działa (dla pewności, choć rzadko potrzebne)
+            clearUserState();
+            showPanel('panel-auth');
         }
     });
 };
@@ -387,10 +392,14 @@ function applyTheme() {
   themeSelect.value = state.theme;
 }
 
+// KLUCZOWA POPRAWKA 2: Dodano renderDayList() i renderLogs()
 themeSelect.onchange = e => { 
     state.theme = e.target.value; 
     applyTheme(); 
-    saveState(); 
+    saveState();
+    // Dodano ponowne renderowanie, aby elementy Planu poprawnie wczytały nowe kolory motywu
+    renderDayList(); 
+    renderLogs();
 }
 
 // --- Logika Planów Treningowych ---

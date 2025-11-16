@@ -1,10 +1,8 @@
-// Używa globalnych zmiennych 'auth', 'db' i 'app' zainicjowanych w index.html
-// Sprawdzamy, czy zostały poprawnie zainicjowane
-if (typeof auth === 'undefined' || typeof db === 'undefined') {
-    console.error("CRITICAL: Firebase Auth/DB objects are undefined. Check index.html initialization.");
-}
+// Używa globalnych zmiennych 'auth', 'db', 'app', 'IS_FIREBASE_CONFIGURED' zainicjowanych w index.html
 
 // --- Struktury Danych i Stany ---
+
+const STORAGE_KEY = 'trening_pro_state';
 
 const defaultUserState = {
   "theme": "light",
@@ -24,9 +22,9 @@ const defaultUserState = {
 let state = JSON.parse(JSON.stringify(defaultUserState)); // Aktualny stan użytkownika
 let currentUserId = null;
 let currentUserEmail = null;
-let masterTimerInterval = null; // Interwał globalnego timera
-let restTimerInterval = null; // Interwał timera odpoczynku
-let currentRestDisplay = null; // Element DOM timera odpoczynku
+let masterTimerInterval = null; 
+let restTimerInterval = null; 
+let currentRestDisplay = null; 
 
 // --- Zmienne globalne DOM ---
 const panels = document.querySelectorAll('.panel');
@@ -39,6 +37,9 @@ const loggedUserEmailDisplay = document.getElementById('loggedUserEmailDisplay')
 const currentAuthStatus = document.getElementById('currentAuthStatus');
 const authForm = document.getElementById('authForm');
 const logoutBtn = document.getElementById('logoutBtn');
+const loginBtn = document.getElementById('loginBtn');
+const registerBtn = document.getElementById('registerBtn');
+
 
 let statsChart = null;
 let currentDay = null;
@@ -46,11 +47,6 @@ let currentDay = null;
 
 // --- Funkcje pomocnicze UI (Modale) ---
 
-/**
- * Wyświetla prosty modal z komunikatem błędu/sukcesu.
- * @param {string} message Treść komunikatu.
- * @param {string} type Typ (success/error/info)
- */
 function showErrorModal(message, type = 'error') {
     const modal = document.createElement('div');
     modal.className = 'modal-message';
@@ -63,12 +59,6 @@ function showErrorModal(message, type = 'error') {
     setTimeout(() => modal.remove(), 3000);
 }
 
-/**
- * Wyświetla modal z opcją Tak/Nie
- * @param {string} message Treść pytania
- * @param {function} onConfirm Funkcja wywoływana po "Tak"
- * @param {function} onCancel Funkcja wywoływana po "Nie"
- */
 function showConfirmModal(message, onConfirm, onCancel = () => {}) {
     const modal = document.createElement('div');
     modal.className = 'modal-confirm';
@@ -92,7 +82,7 @@ function showConfirmModal(message, onConfirm, onCancel = () => {}) {
 }
 
 
-// --- Obsługa Bazy Danych (Firebase Realtime Database) ---
+// --- Obsługa Zapisywania Danych (Firebase lub LocalStorage) ---
 
 /** Zwraca referencję do danych zalogowanego użytkownika w bazie Firebase. */
 function getDbRef() {
@@ -101,26 +91,34 @@ function getDbRef() {
     return db.ref(`artifacts/${appId}/users/${currentUserId}/data`);
 }
 
-/** Zapisuje aktualny stan 'state' do Firebase. */
+/** Zapisuje aktualny stan 'state' do Firebase lub LocalStorage. */
 async function saveState() {
-    const dbRef = getDbRef();
-    if (!dbRef) {
-        // Zapisywanie jest niemożliwe bez zalogowania (i ID użytkownika)
-        return; 
-    }
+    // Tryb Firebase
+    if (window.IS_FIREBASE_CONFIGURED) {
+        const dbRef = getDbRef();
+        if (!dbRef) return; 
 
-    const stateToSave = JSON.parse(JSON.stringify(state)); 
+        const stateToSave = JSON.parse(JSON.stringify(state)); 
 
-    try {
-        await dbRef.set(stateToSave);
-        console.log("Stan zapisany pomyślnie.");
-    } catch (error) {
-        console.error("Błąd zapisu danych do Firebase:", error);
-        showErrorModal("Błąd zapisu danych do chmury.", 'error');
+        try {
+            await dbRef.set(stateToSave);
+            console.log("Stan zapisany pomyślnie do Firebase.");
+        } catch (error) {
+            console.error("Błąd zapisu danych do Firebase:", error);
+            showErrorModal("Błąd zapisu danych do chmury.", 'error');
+        }
+    // Tryb LocalStorage (Fallback)
+    } else {
+        try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+            console.log("Stan zapisany pomyślnie do LocalStorage.");
+        } catch (error) {
+            console.error("Błąd zapisu danych do LocalStorage:", error);
+        }
     }
 }
 
-/** Wczytuje stan z Firebase po zalogowaniu i inicjuje aplikację. */
+/** Wczytuje stan po zalogowaniu (Firebase) lub z pamięci lokalnej (Local). */
 async function loadState(userId, email) {
     currentUserId = userId;
     currentUserEmail = email;
@@ -131,58 +129,70 @@ async function loadState(userId, email) {
     authForm.style.display = 'none';
     logoutBtn.style.display = 'block';
 
-    const dbRef = getDbRef();
-    if (!dbRef) {
-        // Powinno się zdarzyć tylko, jeśli Firebase nie jest skonfigurowane
-        initAppUI(); 
-        return;
-    }
+    // Wczytywanie z Firebase
+    if (window.IS_FIREBASE_CONFIGURED) {
+        const dbRef = getDbRef();
+        if (!dbRef) { initAppUI(); return; }
 
-    try {
-        // Używamy once('value'), aby wczytać dane jednorazowo
-        const snapshot = await dbRef.once('value');
-        const userData = snapshot.val();
-        
-        if (userData) {
-            // Wczytaj dane, ale upewnij się, że są zgodne ze strukturą (np. plany na wszystkie dni)
-            state = { ...defaultUserState, ...userData };
-            state.plans = { ...defaultUserState.plans, ...(userData.plans || {}) };
-        } else {
-            // Pierwsze logowanie lub brak danych - zapisz domyślny stan
-            state = JSON.parse(JSON.stringify(defaultUserState));
-            await saveState(); 
+        try {
+            const snapshot = await dbRef.once('value');
+            const userData = snapshot.val();
+            
+            if (userData) {
+                state = { ...defaultUserState, ...userData };
+                state.plans = { ...defaultUserState.plans, ...(userData.plans || {}) };
+            } else {
+                state = JSON.parse(JSON.stringify(defaultUserState));
+                await saveState(); 
+            }
+        } catch (error) {
+            console.error("Błąd wczytywania danych z Firebase:", error);
+            showErrorModal("Błąd wczytywania danych z chmury.", 'error');
         }
+    // Wczytywanie z LocalStorage
+    } else {
+        try {
+            const localData = localStorage.getItem(STORAGE_KEY);
+            if (localData) {
+                const userData = JSON.parse(localData);
+                state = { ...defaultUserState, ...userData };
+                state.plans = { ...defaultUserState.plans, ...(userData.plans || {}) };
+            } else {
+                state = JSON.parse(JSON.stringify(defaultUserState));
+                saveState();
+            }
+            // Zablokuj przyciski logowania/rejestracji w trybie lokalnym
+            loginBtn.style.display = 'none';
+            registerBtn.style.display = 'none';
+            logoutBtn.style.display = 'none';
+            authForm.style.display = 'none';
+            currentAuthStatus.textContent = 'Status: Tryb Lokalny (Dane zapisane w przeglądarce)';
+            loggedUserEmailDisplay.textContent = 'Tryb Lokalny';
 
-        // Kontynuuj inicjalizację aplikacji po wczytaniu danych
-        initAppUI();
-    } catch (error) {
-        console.error("Błąd wczytywania danych z Firebase:", error);
-        showErrorModal("Błąd wczytywania danych z chmury.", 'error');
-        initAppUI(); 
+        } catch (error) {
+            console.error("Błąd wczytywania danych z LocalStorage:", error);
+        }
     }
+    
+    // Kontynuuj inicjalizację aplikacji po wczytaniu danych
+    initAppUI();
 }
 
 // --- Autoryzacja i Logowanie (Firebase Auth) ---
 
-document.getElementById('loginBtn').onclick = async () => {
+loginBtn.onclick = async () => {
+    if (!window.IS_FIREBASE_CONFIGURED) { showErrorModal("Logowanie jest niedostępne w trybie lokalnym.", 'info'); return; }
+    
     const email = document.getElementById('authEmail').value;
     const password = document.getElementById('authPassword').value;
     authError.textContent = '';
-    
-    if (!email || !password) {
-        return authError.textContent = "Wprowadź e-mail i hasło.";
-    }
-
+    // ... (pozostała logika logowania Firebase jest taka sama)
+    if (!email || !password) { return authError.textContent = "Wprowadź e-mail i hasło."; }
     try {
-        document.getElementById('loginBtn').disabled = true;
-        document.getElementById('registerBtn').disabled = true;
-        
-        // Logowanie
+        loginBtn.disabled = true;
+        registerBtn.disabled = true;
         await auth.signInWithEmailAndPassword(email, password);
-        
         showErrorModal("Zalogowano pomyślnie!", 'success');
-        // onAuthStateChanged zajmie się przejściem do 'panel-main'
-
     } catch (error) {
         let message = "Wystąpił błąd logowania. Spróbuj ponownie.";
         if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password') {
@@ -194,30 +204,27 @@ document.getElementById('loginBtn').onclick = async () => {
         }
         authError.textContent = message;
     } finally {
-        document.getElementById('loginBtn').disabled = false;
-        document.getElementById('registerBtn').disabled = false;
+        loginBtn.disabled = false;
+        registerBtn.disabled = false;
     }
 };
 
-document.getElementById('registerBtn').onclick = async () => {
+registerBtn.onclick = async () => {
+    if (!window.IS_FIREBASE_CONFIGURED) { showErrorModal("Rejestracja jest niedostępna w trybie lokalnym.", 'info'); return; }
+
     const email = document.getElementById('authEmail').value;
     const password = document.getElementById('authPassword').value;
     authError.textContent = '';
 
-    if (!email || password.length < 6) {
-        return authError.textContent = "E-mail jest wymagany, a hasło musi mieć min. 6 znaków.";
-    }
+    if (!email || password.length < 6) { return authError.textContent = "E-mail jest wymagany, a hasło musi mieć min. 6 znaków."; }
 
     try {
-        document.getElementById('loginBtn').disabled = true;
-        document.getElementById('registerBtn').disabled = true;
+        loginBtn.disabled = true;
+        registerBtn.disabled = true;
         
-        // Rejestracja
         await auth.createUserWithEmailAndPassword(email, password);
         
         showErrorModal("Rejestracja udana! Zostałeś automatycznie zalogowany.", 'success');
-        // onAuthStateChanged zajmie się przejściem do 'panel-main'
-
     } catch (error) {
         let message = "Błąd rejestracji.";
         if (error.code === 'auth/email-already-in-use') {
@@ -229,92 +236,86 @@ document.getElementById('registerBtn').onclick = async () => {
         }
         authError.textContent = message;
     } finally {
-         document.getElementById('loginBtn').disabled = false;
-         document.getElementById('registerBtn').disabled = false;
+         loginBtn.disabled = false;
+         registerBtn.disabled = false;
     }
 };
 
-document.getElementById('logoutBtn').onclick = async () => {
+logoutBtn.onclick = async () => {
     showConfirmModal("Czy na pewno chcesz się wylogować?", async () => {
-        // Zakończenie timerów i wyczyszczenie UI
         if (masterTimerInterval) clearInterval(masterTimerInterval);
         if (restTimerInterval) clearInterval(restTimerInterval);
         masterTimerDisplay.style.display = 'none';
         
-        if (auth) {
+        if (window.IS_FIREBASE_CONFIGURED && auth) {
             await auth.signOut();
         }
-        // onAuthStateChanged zajmie się resztą
     });
 };
 
 // --- Główny Listener Firebase (Uruchomienie Aplikacji) ---
 
 document.addEventListener('DOMContentLoaded', () => {
-  if (auth) {
+  if (window.IS_FIREBASE_CONFIGURED) {
+    // TRYB FIREBASE: Logika uwierzytelniania email/hasło
+    
     // 1. Spróbuj zalogować custom tokenem (wymóg środowiska Canvas)
-    if (initialAuthToken) {
-        auth.signInWithCustomToken(initialAuthToken)
-            .then(userCredential => {
-                console.log("Canvas initial sign-in successful:", userCredential.user.uid);
-            })
+    if (__initial_auth_token) {
+        auth.signInWithCustomToken(__initial_auth_token)
+            .then(userCredential => console.log("Canvas initial sign-in successful:", userCredential.user.uid))
             .catch(error => {
-                // Jeśli token wygasł lub jest błąd, spróbuj zalogować anonimowo
-                console.warn("Canvas custom token sign-in failed:", error.message);
-                auth.signInAnonymously().catch(anonError => {
-                    console.error("Anonymous sign-in failed:", anonError);
-                });
+                console.warn("Canvas custom token sign-in failed. Signing in anonymously.", error.message);
+                auth.signInAnonymously().catch(anonError => console.error("Anonymous sign-in failed:", anonError));
             });
     } else {
-        // 2. Jeśli brak tokena, zaloguj anonimowo
-        auth.signInAnonymously().catch(anonError => {
-            console.error("Anonymous sign-in failed:", anonError);
-        });
+        // 2. Jeśli brak tokena, zaloguj anonimowo, aby mieć ID do bazy
+        auth.signInAnonymously().catch(anonError => console.error("Anonymous sign-in failed:", anonError));
     }
 
     // 3. Główny listener do zarządzania stanem użytkownika
     auth.onAuthStateChanged(user => {
-        authError.textContent = ''; // Wyczyść błędy
+        authError.textContent = ''; 
         
+        // Jeśli jest email, to jest to zalogowany użytkownik (w przeciwieństwie do anonimowego)
         if (user && user.email) {
-            // Użytkownik ZALOGOWANY za pomocą email/hasło (lub tokenem)
+            // Zalogowany użytkownik
             loadState(user.uid, user.email);
             showPanel('panel-main');
+        } else if (user && user.isAnonymous) {
+            // Anonimowy użytkownik (tylko w celu utrzymania sesji i dostępu do DB w Firebase)
+            currentAuthStatus.textContent = 'Status: Zalogowany Anonimowo. Zaloguj się, aby zapisać dane na stałe.';
+            loggedUserEmailDisplay.textContent = 'Anonimowy';
+            authForm.style.display = 'block';
+            logoutBtn.style.display = 'none';
+            loadState(user.uid, 'Anonimowy'); // Wczytaj stan anonimowy
+            showPanel('panel-auth');
         } else {
-             // Użytkownik WYLOWOGANY (lub zalogowany anonimowo / przed zalogowaniem)
+             // Wylogowany stan
             currentUserId = null;
             currentUserEmail = null;
-            state = JSON.parse(JSON.stringify(defaultUserState)); // Wyczyść stan lokalny
-            loggedUserEmailDisplay.textContent = 'Niezalogowany';
-            
-            // Uaktualnij status w panelu auth
+            state = JSON.parse(JSON.stringify(defaultUserState)); 
+            loggedUserEmailDisplay.textContent = 'Wylogowany';
             currentAuthStatus.textContent = 'Status: Wylogowany. Zaloguj się, aby kontynuować.';
             authForm.style.display = 'block';
             logoutBtn.style.display = 'none';
-
-            // Wymuś przejście do panelu Auth
-            showPanel('panel-auth'); 
-            updateWelcome();
-            
-            // Wyłącz timer
             if (masterTimerInterval) clearInterval(masterTimerInterval);
             if (restTimerInterval) clearInterval(restTimerInterval);
             masterTimerDisplay.style.display = 'none';
+            showPanel('panel-auth'); 
         }
     });
 
   } else {
-      // Brak konfiguracji Firebase - Tryb Lokalny jest niemożliwy z logiką zapisu do DB
+      // TRYB LOCAL STORAGE: Pomiń całą autoryzację i przejdź bezpośrednio do loadState
       currentAuthStatus.textContent = 'Brak konfiguracji Firebase.';
-      authError.textContent = "Aplikacja wymaga konfiguracji chmury. Opcje logowania i zapisu są niedostępne.";
-      authForm.style.display = 'none';
-      logoutBtn.style.display = 'none';
-      showPanel('panel-auth');
+      authError.textContent = "Aplikacja przełącza się na tryb Lokalny. Dane będą zapisywane tylko w przeglądarce.";
+      // W trybie lokalnym loadState jest wywoływany natychmiast
+      loadState('local_user', 'Tryb Lokalny');
   }
 });
 
 
-// --- Funkcja inicjalizująca interfejs (po zalogowaniu) ---
+// --- Funkcja inicjalizująca interfejs (po zalogowaniu/wczytaniu) ---
 
 function initAppUI() {
     // 1. Sprawdzenie wznowienia treningu
@@ -322,20 +323,17 @@ function initAppUI() {
         if (masterTimerInterval) clearInterval(masterTimerInterval); 
         
         showConfirmModal("Wykryto niezakończony trening. Chcesz go wznowić?", () => {
-            // Wznów
             masterTimerInterval = setInterval(updateMasterTimer, 1000);
             masterTimerDisplay.style.display = 'block';
             renderActiveWorkout();
             showPanel('panel-active-workout');
         }, () => {
-            // Anuluj
             state.activeWorkout = defaultUserState.activeWorkout;
             saveState(); 
             showPanel('panel-main');
         });
 
     } else {
-        // Jeśli nie ma aktywnego treningu, pokaż główny panel
         showPanel('panel-main');
     }
 
@@ -344,15 +342,14 @@ function initAppUI() {
     applyTheme();
     renderDayList();
     renderLogs();
-    // Chart zostanie zainicjowany przy pierwszym wejściu do panel-stats
 }
 
 // --- Nawigacja ---
 
 function showPanel(panelId) {
   // Wymuś logowanie, jeśli panel nie jest panelem autoryzacji
-  if (!currentUserId && panelId !== 'panel-auth') {
-    // Nie pokazujemy modala, jeśli już jesteśmy w panelu auth, żeby uniknąć pętli
+  // W trybie lokalnym nie wymuszamy logowania
+  if (!currentUserId && panelId !== 'panel-auth' && window.IS_FIREBASE_CONFIGURED) {
     if (document.getElementById('panel-auth').classList.contains('active')) {
         return;
     }
@@ -401,7 +398,7 @@ document.getElementById('savePlanChangesBtn').onclick = () => {
 function updateWelcome() {
     // Wyświetla imię użytkownika (część e-maila przed @)
     const emailPart = currentUserEmail ? currentUserEmail.split('@')[0] : '';
-    welcomeMsg.textContent = emailPart ? `, ${emailPart}!` : '';
+    welcomeMsg.textContent = emailPart && emailPart !== 'local' && emailPart !== 'Anonimowy' ? `, ${emailPart}!` : '';
 }
 
 const themeSelect = document.getElementById('themeSelect');
@@ -793,7 +790,7 @@ document.getElementById('fileInput').onchange = e => {
         state.logs = importedLogs; 
         await saveState(); 
         renderLogs(); 
-        showErrorModal("Zaimportowano dane do chmury.", 'success');
+        showErrorModal("Zaimportowano dane do chmury/przeglądarki.", 'success');
         updateStatsChart();
       } else { 
         showErrorModal("Nieprawidłowy format pliku JSON.", 'error');
@@ -805,7 +802,7 @@ document.getElementById('fileInput').onchange = e => {
   reader.readAsText(file);
 }
 document.getElementById('clearHistory').onclick = () => {
-    showConfirmModal("Wyczyścić całą historię treningów dla Twojego konta? Dane te zostaną usunięte z chmury!", () => {
+    showConfirmModal("Wyczyścić całą historię treningów? Dane zostaną usunięte!", () => {
         state.logs = []; 
         saveState(); 
         renderLogs(); 
@@ -867,4 +864,4 @@ function updateStatsChart() {
   statsChart.data.datasets[0].backgroundColor = accentColor;
   
   statsChart.update();
-                                 }
+}

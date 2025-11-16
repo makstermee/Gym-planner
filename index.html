@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Trening Pro v3 🏋️‍♂️</title>
+<title>Trening Pro v4 🏋️‍♂️</title>
 <link rel="stylesheet" href="style.css">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
@@ -16,7 +16,19 @@
 
 <main class="container">
 
-  <section id="panel-main" class="panel active">
+  <section id="panel-login" class="panel">
+    <h2>Wybierz Użytkownika 👤</h2>
+    <div id="userList" class="user-list-container">
+      </div>
+    
+    <h3>Utwórz Nowe Konto</h3>
+    <div class="input-row register-form">
+      <input id="newUsername" placeholder="Nazwa nowego konta" />
+      <button id="registerUserBtn" class="btn-success">Utwórz i Zaloguj</button>
+    </div>
+  </section>
+
+  <section id="panel-main" class="panel">
     <h2>Plany Treningowe</h2>
     <div id="dayList" class="day-list">
       </div>
@@ -74,14 +86,15 @@
 
   <section id="panel-settings" class="panel">
     <h2>Ustawienia ⚙️</h2>
-    <label for="username">Twoje imię:</label>
+    <label for="username">Twoja nazwa konta:</label>
     <input id="username" placeholder="Imię..." />
     <label for="themeSelect">Motyw:</label>
     <select id="themeSelect">
       <option value="light">Jasny</option>
       <option value="dark">Ciemny</option>
     </select>
-    <button id="resetData" class="btn-danger">Resetuj Wszystkie Dane</button>
+    <button id="changeUser" class="btn-secondary">Zmień Użytkownika</button>
+    <button id="resetData" class="btn-danger">Resetuj Wszystkie Dane (Aplikacja)</button>
   </section>
 
 </main>

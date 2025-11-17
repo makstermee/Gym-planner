@@ -31,13 +31,12 @@ let currentDay = null;
 
 // --- BEZPIECZNIK (Najważniejsza zmienna) ---
 // Zmienna blokująca zapis, dopóki nie mamy pewności, że dane z chmury dotarły.
-// Domyślnie FALSE = ZAKAZ ZAPISU.
 let canSaveToCloud = false; 
 
 // --- START APLIKACJI ---
 document.addEventListener('DOMContentLoaded', () => {
 
-    // Zmienne DOM (Pobieramy je raz, gdy strona jest gotowa)
+    // Zmienne DOM
     const appLoader = document.getElementById('appLoader');
     const dayList = document.getElementById('dayList');
     const logArea = document.getElementById('logArea');
@@ -52,7 +51,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const configWarning = document.getElementById('configWarning');
     const panels = document.querySelectorAll('.panel');
     
-    // Funkcje obsługi Loadera (ekranu ładowania)
+    // Funkcje obsługi Loadera
     function hideLoader() {
         if(appLoader) appLoader.style.display = 'none';
     }
@@ -72,45 +71,52 @@ document.addEventListener('DOMContentLoaded', () => {
             if (user) {
                 // --- ZALOGOWANO ---
                 currentUserId = user.uid;
-                
-                // WAŻNE: Na starcie zabraniamy zapisu! Czekamy na dane.
-                canSaveToCloud = false; 
+                canSaveToCloud = false; // Blokada zapisu na start
 
-                // Obsługa UI po zalogowaniu
+                // UI
                 authForm.style.display = 'none';
                 logoutBtn.style.display = 'block';
                 bottomNav.style.display = 'flex';
                 if(welcomeMsg) welcomeMsg.textContent = `, ${user.email.split('@')[0]}!`;
 
-                // Rozpoczynamy nasłuchiwanie bazy danych
+                // Nasłuchiwanie bazy
                 const docRef = doc(db, `users/${currentUserId}/data/user_state`);
                 
                 if(firestoreUnsubscribe) firestoreUnsubscribe();
                 
+                // >>> TUTAJ BYŁ PROBLEM - POPRAWIONA FUNKCJA <<<
                 firestoreUnsubscribe = onSnapshot(docRef, (snap) => {
-                    if (snap.exists()) {
-                        // DANE PRZYSZŁY Z CHMURY
-                        const data = snap.data();
-                        // Łączymy bezpiecznie z domyślnym stanem
-                        state = { 
-                            ...defaultUserState, 
-                            ...data, 
-                            plans: { ...defaultUserState.plans, ...(data.plans||{}) } 
-                        };
-                        console.log("Pobrano dane z chmury.");
-                    } else {
-                        // NOWY UŻYTKOWNIK (Brak danych w bazie)
-                        console.log("Brak danych (nowy profil).");
-                        // Nie zapisujemy od razu! Czekamy na akcję użytkownika.
-                    }
-                    
-                    // TERAZ ZDEJMUJEMY BLOKADĘ - można zapisywać
-                    canSaveToCloud = true; 
+                    try {
+                        if (snap.exists()) {
+                            // DANE ISTNIEJĄ
+                            const data = snap.data();
+                            state = { 
+                                ...defaultUserState, 
+                                ...data, 
+                                plans: { ...defaultUserState.plans, ...(data.plans||{}) } 
+                            };
+                            console.log("Pobrano dane z chmury.");
+                        } else {
+                            // NOWY UŻYTKOWNIK (Brak danych)
+                            // >>> NAPRAWA: Wymuszamy czysty stan, żeby aplikacja nie miała 'undefined' <<<
+                            console.warn("Brak danych (nowy profil) - inicjalizuję domyślny stan.");
+                            state = JSON.parse(JSON.stringify(defaultUserState));
+                        }
+                        
+                        // Zdejmujemy blokadę zapisu
+                        canSaveToCloud = true; 
 
-                    // Odświeżamy widok
-                    renderDayList(); 
-                    initAppUI(); 
-                    hideLoader(); // Ukrywamy loader dopiero teraz!
+                        // Renderujemy widok
+                        renderDayList(); 
+                        initAppUI(); 
+                    
+                    } catch (err) {
+                        console.error("Błąd krytyczny podczas przetwarzania danych:", err);
+                        // Nawet jak coś walnie w kodzie wyżej, to chcemy widzieć błąd, a nie loader
+                    } finally {
+                        // >>> TO GWARANTUJE, ŻE KÓŁKO ZNIKNIE <<<
+                        hideLoader(); 
+                    }
                     
                 }, (error) => {
                     console.error("Błąd Firebase:", error);
@@ -122,7 +128,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 // --- WYLOGOWANO ---
                 if(firestoreUnsubscribe) firestoreUnsubscribe();
                 currentUserId = null;
-                canSaveToCloud = false; // Blokada zapisu
+                canSaveToCloud = false;
                 state = JSON.parse(JSON.stringify(defaultUserState));
                 
                 authForm.style.display = 'block';
@@ -135,16 +141,14 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // --- BEZPIECZNA funkcja zapisu ---
+    // --- Reszta funkcji (Bez zmian, działają poprawnie) ---
+
     async function saveState() {
         if (!currentUserId || !db) return;
-        
-        // OCHRONA PRZED KASOWANIEM DANYCH
         if (!canSaveToCloud) {
             console.warn("⛔ Zatrzymano próbę zapisu - dane jeszcze się nie wczytały.");
             return; 
         }
-
         try { 
             await setDoc(doc(db, `users/${currentUserId}/data/user_state`), state); 
             console.log("Zapisano stan.");
@@ -153,8 +157,6 @@ document.addEventListener('DOMContentLoaded', () => {
             showErrorModal("Błąd zapisu (sprawdź internet).");
         }
     }
-
-    // --- Obsługa Logowania / Rejestracji ---
 
     loginBtn.onclick = async () => {
         const e = document.getElementById('authEmail').value;
@@ -181,20 +183,16 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    // --- Logika Aplikacji ---
-
     function initAppUI() {
-        // Sprawdź czy jest aktywny trening (ale nie zapisuj niczego automatycznie!)
-        if (state.activeWorkout.isActive && !masterTimerInterval) {
+        if (state.activeWorkout && state.activeWorkout.isActive && !masterTimerInterval) {
             if (confirm("Wznowić przerwany trening?")) {
                 masterTimerInterval = setInterval(updateMasterTimer, 1000);
                 masterTimerDisplay.style.display = 'block';
                 renderActiveWorkout();
                 showPanel('panel-active-workout');
             } else {
-                // Jeśli użytkownik odmówi, resetujemy stan treningu
                 state.activeWorkout.isActive = false;
-                saveState(); // To jest bezpieczne (reakcja na decyzję usera)
+                saveState(); 
             }
         }
         renderLogs();
@@ -203,8 +201,10 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderDayList() {
       if (!dayList) return;
       dayList.innerHTML = '';
-      Object.keys(state.plans).forEach(dayName => {
-        const count = state.plans[dayName] ? state.plans[dayName].length : 0;
+      // Zabezpieczenie przed błędem 'undefined'
+      const plans = state.plans || defaultUserState.plans;
+      Object.keys(plans).forEach(dayName => {
+        const count = plans[dayName] ? plans[dayName].length : 0;
         const btn = document.createElement('button');
         btn.className = 'day-btn';
         btn.innerHTML = `<span>${dayName}</span><span>(${count} ćw.)</span>`;
@@ -232,7 +232,6 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('.bottom-nav button').forEach(b=>b.onclick=()=>showPanel(b.dataset.panel));
     document.getElementById('backToMainBtn').onclick=()=>showPanel('panel-main');
     
-    // --- Szczegóły Planu ---
     function showPlanDetails(day) {
         currentDay = day;
         document.getElementById('planDetailsTitle').textContent = `Plan: ${day}`;
@@ -254,7 +253,6 @@ document.addEventListener('DOMContentLoaded', () => {
         showPanel('panel-plan-details');
     }
 
-    // --- Edytor Planu ---
     function showPlanEditor(day) {
         currentDay = day;
         document.getElementById('editPlanTitle').textContent=`Edycja: ${day}`;
@@ -267,7 +265,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if(n && s && r) {
                 if(!state.plans[day]) state.plans[day]=[];
                 state.plans[day].push({name:n, targetSets:s, targetReps:r});
-                saveState(); // User kliknął -> Zapisujemy
+                saveState(); 
                 renderEditList(); 
                 document.getElementById('exName').value='';
             }
@@ -285,21 +283,20 @@ document.addEventListener('DOMContentLoaded', () => {
             d.innerHTML=`${ex.name} <button class="btn-danger" style="width:50px">X</button>`;
             d.querySelector('button').onclick=()=>{
                 state.plans[currentDay].splice(i,1); 
-                saveState(); // User kliknął -> Zapisujemy
+                saveState(); 
                 renderEditList();
             };
             list.appendChild(d);
         });
     }
 
-    // --- Trening ---
     function startWorkout(day) {
         if(!state.plans[day] || !state.plans[day].length) return alert("Pusty plan!");
         state.activeWorkout = { isActive:true, dayName:day, startTime:Date.now(), exercises: state.plans[day].map(e=>({...e, loggedSets:[]})) };
         if(masterTimerInterval) clearInterval(masterTimerInterval);
         masterTimerInterval = setInterval(updateMasterTimer,1000);
         masterTimerDisplay.style.display='block';
-        saveState(); // Start treningu -> Zapisujemy
+        saveState(); 
         renderActiveWorkout(); showPanel('panel-active-workout');
     }
 
@@ -318,7 +315,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const w=document.getElementById(`w-${i}`).value; const r=document.getElementById(`r-${i}`).value;
                 if(w&&r) { 
                     ex.loggedSets.push({weight:w, reps:r}); 
-                    saveState(); // Dodanie serii -> Zapisujemy
+                    saveState(); 
                     renderActiveWorkout(); 
                 }
             };
@@ -329,7 +326,7 @@ document.addEventListener('DOMContentLoaded', () => {
             clearInterval(masterTimerInterval); masterTimerDisplay.style.display='none';
             state.logs.push({date:new Date().toISOString().split('T')[0], dayName:state.activeWorkout.dayName, duration:masterTimerDisplay.textContent, exercises:state.activeWorkout.exercises.filter(e=>e.loggedSets.length)});
             state.activeWorkout={isActive:false}; 
-            saveState(); // Koniec -> Zapisujemy
+            saveState(); 
             renderLogs(); 
             showPanel('panel-logs');
         };
@@ -341,7 +338,6 @@ document.addEventListener('DOMContentLoaded', () => {
         masterTimerDisplay.textContent = new Date(diff).toISOString().slice(11,19);
     }
 
-    // --- Logi i Statystyki ---
     function renderLogs() {
         if(!logArea) return;
         logArea.innerHTML = state.logs.slice().reverse().map(l=>`<div class="card" style="border-left:4px solid green;padding:10px;margin-bottom:5px">
@@ -370,7 +366,6 @@ document.addEventListener('DOMContentLoaded', () => {
         statsChart.update();
     }
     
-    // --- Import / Export ---
     document.getElementById('exportBtn').onclick=()=>{
         const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([JSON.stringify(state.logs)],{type:'application/json'}));
         a.download='trening.json'; a.click();

@@ -1,185 +1,140 @@
 <!DOCTYPE html>
 <html lang="pl">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Trening Pro 💪</title>
-<link rel="stylesheet" href="style.css">
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Gym Planner Pro 2.0</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div id="appLoader" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #111; z-index: 9999; display: flex; flex-direction: column; justify-content: center; align-items: center; color: white;">
-    <div class="spinner" style="width: 50px; height: 50px; border: 5px solid #333; border-top: 5px solid #ff5722; border-radius: 50%; animation: spin 1s linear infinite;"></div>
-    <p style="margin-top: 20px; font-family: sans-serif;">Wczytywanie planu...</p>
-</div>
-<style>
-    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-</style>
 
-<script type="module">
-  // Importy - używamy tych samych wersji, co w app.js (11.6.1)
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-  import { getAuth } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-  import { getFirestore } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-  // Analytics nie jest używane w app.js, więc pomijam import getAnalytics dla czystości
-
-  // Konfiguracja (bez zmian)
-  const firebaseConfig = {
-    apiKey: "AIzaSyCacBxUhSiqaaCBrmVVKluMHMs3iMpR_cA",
-    authDomain: "pro-plan-e6f00.firebaseapp.com",
-    databaseURL: "https://pro-plan-e6f00-default-rtdb.europe-west1.firebasedabase.app",
-    projectId: "pro-plan-e6f00",
-    storageBucket: "pro-plan-e6f00.firebasestorage.app",
-    messagingSenderId: "887703996706",
-    appId: "1:887703996706:web:b7363c891b41b7d4697d7b",
-    measurementId: "G-1WTB0NNLEB"
-  };
-
-  // Inicjalizacja i przekazanie zmiennych do okna (window)
-  try {
-    const app = initializeApp(firebaseConfig);
-
-    // TO JEST KLUCZOWY BRAKUJĄCY ELEMENT:
-    // Udostępnij globalne zmienne, których oczekuje app.js
-    window.auth = getAuth(app);
-    window.db = getFirestore(app);
-    window.appId = firebaseConfig.appId;
-    window.IS_FIREBASE_CONFIGURED = true;
-    
-    console.log("Firebase skonfigurowane i gotowe (index.html).");
-
-  } catch (error) {
-    console.error("Błąd inicjalizacji Firebase:", error);
-    window.IS_FIREBASE_CONFIGURED = false;
-  }
-</script>
-
-
-<header class="top">
-  <h1>Trening Pro<span id="welcomeMsg"></span></h1>
-  <div id="masterTimerDisplay" class="master-timer" style="display:none;">00:00:00</div>
-</header>
-
-<main class="container">
-
-  <section id="panel-auth" class="panel active">
-    <h2>Zarządzanie Kontem 🔑</h2>
-    <div id="authStatusArea" style="text-align: center; margin-bottom: 20px;">
-        <p id="currentAuthStatus" style="font-weight: bold; color: var(--text);"></p>
-        <p id="authError" style="color: var(--danger); font-weight: bold;"></p>
+    <div id="appLoader">
+        <div class="spinner"></div>
+        <p>Ładowanie profilu...</p>
     </div>
 
-    <div id="configWarning" style="background: var(--danger); color: #fff; padding: 15px; border-radius: 10px; margin-bottom: 20px; display: none;">
-        <strong>Błąd Konfiguracji Chmury!</strong><br>
-        <p style="margin: 5px 0 0 0;">Autoryzacja i zapis na wielu urządzeniach nie są dostępne, dopóki system nie dostarczy konfiguracji Firebase.</p>
-    </div>
+    <div id="toastContainer"></div>
 
-       <div id="authForm">
-        <p style="text-align: center; color: var(--muted); margin-top: 0;">Zaloguj się lub zarejestruj, aby zapisywać postępy.</p>
-        <input id="authEmail" type="email" placeholder="E-mail" required />
-        <input id="authPassword" type="password" placeholder="Hasło (min. 6 znaków)" required />
+    <header class="top-nav">
+        <div class="logo"><i class="fa-solid fa-dumbbell"></i> GymPlan</div>
+        <div id="cloudStatus" class="cloud-status"><i class="fa-solid fa-cloud"></i></div>
+    </header>
+
+    <main id="mainContainer">
         
-        <div class="button-row" style="margin-top: 20px;">
-          <button id="loginBtn" class="btn-success">Zaloguj</button>
-          <button id="registerBtn" class="btn-secondary">Zarejestruj</button>
-        </div>
-    </div>
-    
-    <button id="logoutBtn" class="btn-danger" style="display: none; width: 100%; margin-top: 20px;">Wyloguj się</button>
- 
-    
-    <hr style="margin-top: 30px; border-color: var(--muted-light);">
-    <p style="font-size: 0.8em; text-align: center; color: var(--muted);">
-        ID Użytkownika (wymagany do zapisów): <span id="currentUserIdDisplay" style="font-weight: bold; color: var(--accent);">Brak ID</span>
-    </p>
-  </section>
+        <section id="view-auth" class="view active">
+            <div class="auth-box">
+                <h2>Witaj w formie! 👋</h2>
+                <p>Zaloguj się, aby synchronizować treningi.</p>
+                <form id="authForm">
+                    <div class="input-group">
+                        <i class="fa-solid fa-envelope"></i>
+                        <input type="email" id="authEmail" placeholder="Email" required>
+                    </div>
+                    <div class="input-group">
+                        <i class="fa-solid fa-lock"></i>
+                        <input type="password" id="authPass" placeholder="Hasło (min. 6 znaków)" required>
+                    </div>
+                    <button type="submit" id="btnLogin" class="btn-primary">Zaloguj / Rejestruj</button>
+                </form>
+                <p id="authError" class="error-msg"></p>
+            </div>
+        </section>
 
-  <section id="panel-main" class="panel">
-    <h2>Plany Treningowe 📅</h2>
-    <div id="dayList" class="day-list">
-      </div>
-  </section>
-  
-  <section id="panel-plan-details" class="panel">
-    <h2 id="planDetailsTitle">Plan: Poniedziałek</h2>
-    <div id="planDetailsList" class="exercise-list">
-      </div>
-    <div class="button-row" style="margin-top: 20px;">
-      <button id="editPlanBtn" class="btn-secondary">Edytuj plan</button>
-      <button id="startWorkoutBtn" class="btn-success">Rozpocznij trening</button>
-    </div>
-    <button id="backToMainBtn" class="btn-secondary" style="margin-top: 10px; width: 100%;">Powrót do listy dni</button>
-  </section>
+        <section id="view-plans" class="view">
+            <h2 class="section-title">Twój Tydzień</h2>
+            <div id="daysGrid" class="grid-container">
+                </div>
+        </section>
 
-  <section id="panel-edit-plan" class="panel">
-    <h2 id="editPlanTitle">Edytuj: Dzień</h2>
-    
-    <h3>Dodaj Ćwiczenie</h3>
-    <div class="input-row">
-      <input id="exName" placeholder="Nazwa ćwiczenia (np. Przysiady)" required />
-      <input id="exTargetSets" type="number" min="1" value="3" placeholder="Serie" required style="flex: 0 0 80px;" />
-      <input id="exTargetReps" type="number" min="1" value="10" placeholder="Powt." required style="flex: 0 0 80px;" />
-      <button id="addExerciseBtn" style="flex: 0 0 80px;">Dodaj</button>
-    </div>
-    
-    <h3>Ćwiczenia w Planie</h3>
-    <div id="editPlanList" class="exercise-list">
-      </div>
+        <section id="view-editor" class="view">
+            <div class="header-row">
+                <button class="btn-icon" onclick="window.app.router('view-plans')"><i class="fa-solid fa-arrow-left"></i></button>
+                <h2 id="editorTitle">Poniedziałek</h2>
+                <button class="btn-icon" id="btnStartWorkout"><i class="fa-solid fa-play"></i></button>
+            </div>
+            
+            <div class="add-exercise-box">
+                <input type="text" id="newExName" placeholder="Nazwa ćwiczenia">
+                <div class="row-inputs">
+                    <input type="number" id="newExSets" placeholder="Serie" value="3">
+                    <input type="number" id="newExReps" placeholder="Powt." value="10">
+                    <button id="btnAddEx" class="btn-small"><i class="fa-solid fa-plus"></i></button>
+                </div>
+            </div>
 
-    <div class="button-row" style="margin-top: 20px;">
-      <button id="savePlanChangesBtn" class="btn-success">Zapisz zmiany i wróć</button>
-    </div>
-  </section>
+            <div id="editorList" class="list-container"></div>
+        </section>
 
-  <section id="panel-active-workout" class="panel">
-    <h2 id="activeWorkoutTitle">Aktywny Trening</h2>
-    <div id="activeWorkoutList" class="exercise-list">
-      </div>
-    
-    <button id="finishWorkoutBtn" class="btn-danger" style="margin-top: 20px; width: 100%;">Zakończ Trening i Zapisz Log</button>
-  </section>
+        <section id="view-workout" class="view">
+            <div class="workout-header">
+                <div>
+                    <small>Trening:</small>
+                    <h2 id="workoutDayTitle">...</h2>
+                </div>
+                <div id="workoutTimer" class="timer-badge">00:00:00</div>
+            </div>
 
-  <section id="panel-settings" class="panel">
-    <h2>Ustawienia ⚙️</h2>
-    
-    <label for="loggedUserEmailDisplay" style="font-size: 0.9em; margin-bottom: 5px;">Status konta:</label>
-    <p id="loggedUserEmailDisplay" style="font-weight: bold; margin-bottom: 20px; color: var(--accent);"></p>
+            <div id="workoutList" class="list-container"></div>
 
-    <p style="color: var(--muted); text-align: center;">Aplikacja działa w trybie ciemnym.</p>
-  </section>
+            <button id="btnFinishWorkout" class="btn-danger big-btn">
+                <i class="fa-solid fa-flag-checkered"></i> Zakończ Trening
+            </button>
+        </section>
 
-  <section id="panel-logs" class="panel">
-    <h2>Historia Logów 📜</h2>
-    <div id="logArea" class="log-area">
-      </div>
-    
-    <div class="button-row" style="margin-top: 20px;">
-      <button id="clearHistory" class="btn-danger">Wyczyść historię</button>
-      <button id="exportBtn">Eksportuj JSON</button>
-      <button id="importBtn" class="btn-secondary">Importuj JSON</button>
-      <input type="file" id="fileInput" style="display:none" accept=".json">
-    </div>
-  </section>
+        <section id="view-history" class="view">
+            <h2 class="section-title">Historia Treningów</h2>
+            <div id="historyList" class="list-container"></div>
+        </section>
 
-  <section id="panel-stats" class="panel">
-    <h2>Statystyki 📈</h2>
-    <canvas id="statsChart" height="250"></canvas>
-    <p style="text-align: center; color: var(--muted); margin-top: 10px;">Objętość treningowa (kg * powtórzenia) w czasie.</p>
-  </section>
+        <section id="view-profile" class="view">
+            <h2 class="section-title">Twój Profil</h2>
+            <div class="card profile-card">
+                <p>Zalogowany jako:</p>
+                <strong id="userEmailDisplay">...</strong>
+                <button id="btnLogout" class="btn-outline">Wyloguj się</button>
+            </div>
+            
+            <div class="card chart-card">
+                <canvas id="statsChart"></canvas>
+            </div>
+            <div style="text-align:center; margin-top:20px; color:#666; font-size:0.8rem;">
+                Gym Planner Pro v2.0 (Optimized)
+            </div>
+        </section>
 
+    </main>
 
-  </section>
+    <nav class="bottom-nav" id="bottomNav">
+        <button data-target="view-plans" class="active"><i class="fa-solid fa-calendar-days"></i><span>Plan</span></button>
+        <button data-target="view-workout" id="navWorkoutBtn" style="display:none; color:var(--accent)"><i class="fa-solid fa-person-running"></i><span>Trening</span></button>
+        <button data-target="view-history"><i class="fa-solid fa-clock-rotate-left"></i><span>Historia</span></button>
+        <button data-target="view-profile"><i class="fa-solid fa-user"></i><span>Profil</span></button>
+    </nav>
 
-</main>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-<nav class="bottom-nav" id="bottomNav" style="display: none;">
-  <button data-panel="panel-main">Plan</button>
-  <button data-panel="panel-logs">Logi</button>
-  <button data-panel="panel-stats">Statystyki</button>
-  <button data-panel="panel-settings">Ustawienia</button>
-  <button data-panel="panel-auth">Konto</button>
-</nav>
+        const firebaseConfig = {
+            apiKey: "AIzaSyCacBxUhSiqaaCBrmVVKluMHMs3iMpR_cA",
+            authDomain: "pro-plan-e6f00.firebaseapp.com",
+            databaseURL: "https://pro-plan-e6f00-default-rtdb.europe-west1.firebasedabase.app",
+            projectId: "pro-plan-e6f00",
+            storageBucket: "pro-plan-e6f00.firebasestorage.app",
+            messagingSenderId: "887703996706",
+            appId: "1:887703996706:web:b7363c891b41b7d4697d7b",
+            measurementId: "G-1WTB0NNLEB"
+        };
 
-<script type="module" src="app-v2.js"></script>
+        const app = initializeApp(firebaseConfig);
+        window.auth = getAuth(app);
+        window.db = getFirestore(app);
+        window.isFirebaseReady = true;
+    </script>
+    <script type="module" src="app-v2.js"></script>
 </body>
 </html>

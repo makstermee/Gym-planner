@@ -22,15 +22,13 @@ const defaultUserState = {
 
 let state = JSON.parse(JSON.stringify(defaultUserState)); 
 let currentUserId = null;
-let currentUserEmail = null; 
 let firestoreUnsubscribe = null; 
 let masterTimerInterval = null; 
 let statsChart = null;
 let currentDay = null;
 
-// --- BEZPIECZNIK DANYCH (NOWOŚĆ) ---
-// To jest klucz do naprawy problemu. Nie pozwalamy na zapis, dopóki dane nie zjadą z chmury.
-let isDataLoaded = false; 
+// Zmienna blokująca zapis, dopóki nie mamy pewności, że dane z chmury dotarły
+let canSaveToCloud = false; 
 
 // --- START APLIKACJI ---
 document.addEventListener('DOMContentLoaded', () => {
@@ -66,15 +64,14 @@ document.addEventListener('DOMContentLoaded', () => {
             if (user) {
                 // Zalogowano
                 currentUserId = user.uid;
-                currentUserEmail = user.email;
                 
                 authForm.style.display = 'none';
                 logoutBtn.style.display = 'block';
                 bottomNav.style.display = 'flex';
                 welcomeMsg.textContent = `, ${user.email.split('@')[0]}!`;
 
-                // Blokujemy zapis do momentu pobrania danych
-                isDataLoaded = false; 
+                // BLOKADA ZAPISU: Na starcie zabraniamy zapisu!
+                canSaveToCloud = false; 
 
                 // Pobieranie danych w tle
                 const docRef = doc(db, `users/${currentUserId}/data/user_state`);
@@ -92,14 +89,14 @@ document.addEventListener('DOMContentLoaded', () => {
                         };
                         console.log("Pobrano dane z chmury.");
                     } else {
-                        console.log("Profil nie istnieje, tworzenie nowego.");
-                        // Pozwalamy na zapis, bo to nowy profil
-                        isDataLoaded = true; 
-                        saveState(); 
+                        console.log("Brak danych w chmurze (nowy profil).");
+                        // NIE ZAPISUJEMY AUTOMATYCZNIE! 
+                        // Pozwalamy użytkownikowi działać na pustym stanie.
+                        // Zapis nastąpi dopiero jak użytkownik coś kliknie.
                     }
                     
-                    // ZDEJMUJEMY BLOKADĘ - teraz można bezpiecznie zapisywać
-                    isDataLoaded = true; 
+                    // DOPIERO TERAZ ZDEJMUJEMY BLOKADĘ
+                    canSaveToCloud = true; 
 
                     // Renderujemy i ukrywamy loader
                     renderDayList(); 
@@ -108,7 +105,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     
                 }, (error) => {
                     console.error("Błąd Firebase:", error);
-                    // W razie błędu zdejmujemy loader, ale blokada zapisu zostaje (dla bezpieczeństwa)
                     hideLoader(); 
                     showErrorModal("Błąd pobierania danych!");
                 });
@@ -117,7 +113,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Wylogowano
                 if(firestoreUnsubscribe) firestoreUnsubscribe();
                 currentUserId = null;
-                isDataLoaded = false; // Blokujemy zapis
+                canSaveToCloud = false; // Blokujemy zapis
                 state = JSON.parse(JSON.stringify(defaultUserState));
                 
                 authForm.style.display = 'block';
@@ -130,27 +126,26 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // --- Funkcja Zapisu z ZABEZPIECZENIEM ---
+    // --- Bezpieczna Funkcja Zapisu ---
     async function saveState() {
         if (!currentUserId || !db) return;
         
-        // --- TUTAJ JEST POPRAWKA ---
-        if (!isDataLoaded) {
-            console.warn("PRÓBA ZAPISU ZABLOKOWANA: Dane jeszcze nie zostały wczytane.");
+        // OCHRONA PRZED NADPISANIEM DANYCH PUSTYM PLIKIEM PRZY STARCIE
+        if (!canSaveToCloud) {
+            console.warn("Zatrzymano próbę zapisu - dane jeszcze się nie wczytały.");
             return; 
         }
-        // ---------------------------
 
         try { 
             await setDoc(doc(db, `users/${currentUserId}/data/user_state`), state); 
             console.log("Zapisano stan.");
         } catch (e) { 
             console.error("Błąd zapisu:", e);
-            showErrorModal("Nie udało się zapisać zmian (brak internetu?)");
+            showErrorModal("Problem z internetem - nie zapisano.");
         }
     }
 
-    // --- Reszta logiki ---
+    // --- Logika Aplikacji ---
 
     loginBtn.onclick = async () => {
         const e = document.getElementById('authEmail').value;
@@ -177,17 +172,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    // Pomocnicze modale
-    function showErrorModal(msg, type='error') {
-        const d = document.createElement('div');
-        d.className = 'modal-message';
-        d.style.background = type==='error'?'var(--danger)':(type==='success'?'var(--success)':'var(--accent)');
-        d.innerHTML = `<strong>${msg}</strong>`;
-        document.body.appendChild(d);
-        setTimeout(()=>d.remove(),3000);
-    }
-
     function initAppUI() {
+        // POPRAWKA: Usunęliśmy stąd saveState()! 
+        // Aplikacja tylko odczytuje stan, nigdy nie zapisuje przy uruchamianiu.
         if (state.activeWorkout.isActive && !masterTimerInterval) {
             if (confirm("Wznowić trening?")) {
                 masterTimerInterval = setInterval(updateMasterTimer, 1000);
@@ -195,8 +182,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 renderActiveWorkout();
                 showPanel('panel-active-workout');
             } else {
+                // Jeśli użytkownik anuluje wznowienie, wtedy resetujemy flagę
+                // Ale robimy to dopiero po potwierdzeniu (user interaction)
                 state.activeWorkout.isActive = false;
-                saveState();
+                saveState(); // To jest bezpieczne, bo to reakcja na kliknięcie "Anuluj"
             }
         }
         renderLogs();
@@ -258,7 +247,9 @@ document.addEventListener('DOMContentLoaded', () => {
             if(n && s && r) {
                 if(!state.plans[day]) state.plans[day]=[];
                 state.plans[day].push({name:n, targetSets:s, targetReps:r});
-                saveState(); renderEditList(); document.getElementById('exName').value='';
+                saveState(); // Bezpieczne - reakcja na kliknięcie
+                renderEditList(); 
+                document.getElementById('exName').value='';
             }
         };
         document.getElementById('savePlanChangesBtn').onclick=()=>{
@@ -273,7 +264,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const d=document.createElement('div'); d.className='card';
             d.innerHTML=`${ex.name} <button class="btn-danger" style="width:50px">X</button>`;
             d.querySelector('button').onclick=()=>{
-                state.plans[currentDay].splice(i,1); saveState(); renderEditList();
+                state.plans[currentDay].splice(i,1); 
+                saveState(); // Bezpieczne - reakcja na kliknięcie
+                renderEditList();
             };
             list.appendChild(d);
         });
@@ -285,7 +278,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if(masterTimerInterval) clearInterval(masterTimerInterval);
         masterTimerInterval = setInterval(updateMasterTimer,1000);
         masterTimerDisplay.style.display='block';
-        saveState(); renderActiveWorkout(); showPanel('panel-active-workout');
+        saveState(); // Bezpieczne - reakcja na kliknięcie
+        renderActiveWorkout(); showPanel('panel-active-workout');
     }
 
     function renderActiveWorkout() {
@@ -300,14 +294,21 @@ document.addEventListener('DOMContentLoaded', () => {
             list.appendChild(d);
             d.querySelector(`#btn-${i}`).onclick=()=>{
                 const w=document.getElementById(`w-${i}`).value; const r=document.getElementById(`r-${i}`).value;
-                if(w&&r) { ex.loggedSets.push({weight:w, reps:r}); saveState(); renderActiveWorkout(); }
+                if(w&&r) { 
+                    ex.loggedSets.push({weight:w, reps:r}); 
+                    saveState(); // Bezpieczne - reakcja na kliknięcie
+                    renderActiveWorkout(); 
+                }
             };
         });
         document.getElementById('finishWorkoutBtn').onclick=()=>{
             if(!confirm("Zakończyć?")) return;
             clearInterval(masterTimerInterval); masterTimerDisplay.style.display='none';
             state.logs.push({date:new Date().toISOString().split('T')[0], dayName:state.activeWorkout.dayName, duration:masterTimerDisplay.textContent, exercises:state.activeWorkout.exercises.filter(e=>e.loggedSets.length)});
-            state.activeWorkout={isActive:false}; saveState(); renderLogs(); showPanel('panel-logs');
+            state.activeWorkout={isActive:false}; 
+            saveState(); // Bezpieczne - reakcja na kliknięcie
+            renderLogs(); 
+            showPanel('panel-logs');
         };
     }
     
@@ -350,10 +351,27 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     document.getElementById('importBtn').onclick=()=>document.getElementById('fileInput').click();
     document.getElementById('fileInput').onchange=(e)=>{
-        const r=new FileReader(); r.onload=async()=>{ state.logs=JSON.parse(r.result); await saveState(); renderLogs(); };
+        const r=new FileReader(); r.onload=async()=>{ 
+            state.logs=JSON.parse(r.result); 
+            saveState(); // Bezpieczne - user sam wybrał plik
+            renderLogs(); 
+        };
         if(e.target.files[0]) r.readAsText(e.target.files[0]);
     };
     document.getElementById('clearHistory').onclick=async()=>{ 
-        if(confirm("Usunąć?")) { state.logs=[]; await saveState(); renderLogs(); } 
+        if(confirm("Usunąć?")) { 
+            state.logs=[]; 
+            saveState(); // Bezpieczne
+            renderLogs(); 
+        } 
     };
+
+    function showErrorModal(msg) {
+        const d = document.createElement('div');
+        d.className = 'modal-message';
+        d.style.background = 'var(--danger)';
+        d.innerHTML = `<strong>${msg}</strong>`;
+        document.body.appendChild(d);
+        setTimeout(()=>d.remove(),3000);
+    }
 });

@@ -1,383 +1,384 @@
 import { onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-import { doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+import { doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-// Pobranie referencji (z index.html)
+// Instancje z window (z index.html)
 const auth = window.auth;
 const db = window.db;
 
-// --- DOMYŚLNY STAN DANYCH ---
-const defaultState = {
+// --- STAN APLIKACJI ---
+const defaultData = {
     plans: {
-        "Poniedziałek": [], "Wtorek": [], "Środa": [], "Czwartek": [], 
+        "Poniedziałek": [], "Wtorek": [], "Środa": [], "Czwartek": [],
         "Piątek": [], "Sobota": [], "Niedziela": []
     },
     logs: [],
     activeWorkout: { isActive: false, day: null, startTime: null, exercises: [] }
 };
 
-// --- STAN APLIKACJI (Lokalny) ---
-let appState = JSON.parse(JSON.stringify(defaultState));
+let state = JSON.parse(JSON.stringify(defaultData));
 let currentUser = null;
-let unsanctionedChanges = false; // Czy są zmiany do zapisania?
-let saveTimeout = null; // ID timera do debounce
-let masterTimer = null; // Timer treningu
+let saveTimeout = null;
+let masterTimerInterval = null;
 
-// --- ELEMENTY DOM ---
-const els = {
-    loader: document.getElementById('appLoader'),
-    views: document.querySelectorAll('.view'),
-    navBtns: document.querySelectorAll('.bottom-nav button'),
-    cloudIcon: document.getElementById('cloudStatus'),
-    toasts: document.getElementById('toastContainer')
-};
+// --- CACHE SYSTEM (SZYBKOŚĆ) ---
+const CACHE_KEY = "gym_pro_cache";
 
-// --- 1. SYSTEM POWIADOMIEŃ (Toast) ---
-function showToast(msg, type = 'info') {
-    const t = document.createElement('div');
-    t.className = `toast ${type}`;
-    t.innerText = msg;
-    els.toasts.appendChild(t);
-    setTimeout(() => t.remove(), 3000);
+function loadFromCache() {
+    const cached = localStorage.getItem(CACHE_KEY);
+    if (cached) {
+        try {
+            state = JSON.parse(cached);
+            console.log("📂 Wczytano z cache (Instant Load)");
+            refreshUI();
+        } catch (e) { console.error("Błąd cache", e); }
+    }
 }
 
-// --- 2. SYSTEM ZAPISU (Debounce) ---
-// To jest klucz do sukcesu. Nie zapisujemy od razu. Czekamy 2 sekundy od ostatniej zmiany.
-function triggerSave() {
-    unsanctionedChanges = true;
-    els.cloudIcon.className = 'cloud-status saving';
-    
+function saveToCache() {
+    localStorage.setItem(CACHE_KEY, JSON.stringify(state));
+}
+
+// --- SYSTEM ZAPISU (CLOUD & LOCAL) ---
+async function saveData() {
+    // 1. Zapisz lokalnie natychmiast
+    saveToCache();
+    updateSyncIcon('saving');
+
+    // 2. Zapisz w chmurze z opóźnieniem (Debounce 2s)
     if (saveTimeout) clearTimeout(saveTimeout);
     
     saveTimeout = setTimeout(async () => {
         if (!currentUser) return;
         try {
-            await setDoc(doc(db, `users/${currentUser.uid}/data/main`), appState);
-            els.cloudIcon.className = 'cloud-status saved';
-            unsanctionedChanges = false;
-            setTimeout(() => els.cloudIcon.className = 'cloud-status', 2000);
-        } catch (err) {
-            console.error("Błąd zapisu:", err);
-            els.cloudIcon.className = 'cloud-status error';
-            showToast("Błąd zapisu! Sprawdź internet.", "error");
+            await setDoc(doc(db, "users", currentUser.uid), { data: state });
+            console.log("☁️ Zapisano w Firebase");
+            updateSyncIcon('saved');
+            setTimeout(() => updateSyncIcon('idle'), 2000);
+        } catch (error) {
+            console.error("Błąd zapisu chmury:", error);
+            updateSyncIcon('error');
+            showToast("Błąd zapisu w chmurze!", "red");
         }
-    }, 2000); // Czekaj 2s
+    }, 2000);
 }
 
-// --- 3. SYSTEM AUTORYZACJI I POBIERANIA DANYCH ---
-function initAuth() {
-    onAuthStateChanged(auth, (user) => {
+function updateSyncIcon(status) {
+    const el = document.getElementById('syncIndicator');
+    if (status === 'saving') el.className = 'sync-status saving';
+    else if (status === 'saved') el.className = 'sync-status saved';
+    else if (status === 'error') { el.className = 'sync-status'; el.style.color = 'red'; }
+    else el.className = 'sync-status';
+}
+
+// --- AUTORYZACJA ---
+function initApp() {
+    loadFromCache(); // Ładuj UI natychmiast
+    
+    onAuthStateChanged(auth, async (user) => {
+        const splash = document.getElementById('splashScreen');
+        
         if (user) {
             currentUser = user;
-            document.getElementById('userEmailDisplay').innerText = user.email;
-            loadUserData();
-        } else {
-            currentUser = null;
-            appState = JSON.parse(JSON.stringify(defaultState));
-            showView('view-auth');
-            els.loader.style.display = 'none';
-        }
-    });
-}
+            document.getElementById('userEmail').textContent = user.email;
+            
+            // Pobierz świeże dane z chmury
+            try {
+                const docRef = doc(db, "users", user.uid);
+                const snap = await getDoc(docRef);
+                if (snap.exists()) {
+                    const cloudData = snap.data().data;
+                    // Scalanie: Użyj chmury jako prawdy, chyba że jest pusta
+                    if (cloudData) {
+                        state = { ...defaultData, ...cloudData };
+                        saveToCache(); // Aktualizuj cache
+                        refreshUI();
+                    }
+                }
+                if (splash) splash.style.display = 'none';
+                app.navigate('view-dashboard');
+                
+                // Wznów timer jeśli trzeba
+                if (state.activeWorkout?.isActive) {
+                    document.getElementById('navWorkout').style.display = 'flex';
+                    startTimer();
+                }
 
-function loadUserData() {
-    // Nasłuchiwanie zmian w czasie rzeczywistym
-    const docRef = doc(db, `users/${currentUser.uid}/data/main`);
-    
-    onSnapshot(docRef, (snap) => {
-        if (snap.exists()) {
-            // Mamy dane z chmury!
-            // Uwaga: Nadpisujemy stan lokalny tylko jeśli NIE mamy "wiszących" zmian
-            // żeby nie nadpisać tego co użytkownik właśnie wpisuje.
-            if (!unsanctionedChanges) {
-                appState = { ...defaultState, ...snap.data() };
-                refreshUI();
+            } catch (e) {
+                console.error("Błąd pobierania:", e);
+                showToast("Błąd połączenia z bazą", "red");
+                if (splash) splash.style.display = 'none';
             }
         } else {
-            // Nowy użytkownik - tworzymy strukturę w chmurze
-            setDoc(docRef, defaultState);
+            // Wylogowano
+            currentUser = null;
+            localStorage.removeItem(CACHE_KEY); // Czyść cache
+            state = JSON.parse(JSON.stringify(defaultData));
+            if (splash) splash.style.display = 'none';
+            app.navigate('view-auth');
         }
-        els.loader.style.display = 'none';
-        
-        // Jeśli trening był aktywny po odświeżeniu - wznów timer
-        if (appState.activeWorkout.isActive) {
-            startMasterTimer();
-            document.getElementById('navWorkoutBtn').style.display = 'flex';
-        }
-        
-        // Domyślny widok po zalogowaniu
-        if (document.getElementById('view-auth').classList.contains('active')) {
-            showView('view-plans');
-        }
-    }, (err) => {
-        console.error("Błąd Firebase:", err);
-        els.loader.style.display = 'none';
-        showToast("Błąd dostępu do danych. Sprawdź reguły bazy!", "error");
     });
 }
 
-// --- 4. OBSŁUGA UI I NAWIGACJI ---
-function showView(viewId) {
-    els.views.forEach(v => v.classList.remove('active'));
-    document.getElementById(viewId).classList.add('active');
-    
-    // Update nav
-    els.navBtns.forEach(b => b.classList.remove('active'));
-    const activeBtn = document.querySelector(`.bottom-nav button[data-target="${viewId}"]`);
-    if (activeBtn) activeBtn.classList.add('active');
-
-    // Render specific views
-    if (viewId === 'view-plans') renderPlansGrid();
-    if (viewId === 'view-history') renderHistory();
-    if (viewId === 'view-profile') renderStats();
-}
-
-// Router globalny dla HTML
+// --- NAWIGACJA ---
 window.app = {
-    router: showView
+    navigate: (viewId) => {
+        document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+        const target = document.getElementById(viewId);
+        if (target) target.classList.add('active');
+
+        // Update paska dolnego
+        document.querySelectorAll('.bottom-nav button').forEach(b => b.classList.remove('active'));
+        const navBtn = document.querySelector(`button[data-target="${viewId}"]`);
+        if (navBtn) navBtn.classList.add('active');
+
+        // Specyficzne rendery
+        if (viewId === 'view-dashboard') renderDashboard();
+        if (viewId === 'view-history') renderHistory();
+        if (viewId === 'view-profile') renderStats();
+    }
 };
 
-// Event Listeners dla Nawigacji
-els.navBtns.forEach(btn => {
-    btn.onclick = () => showView(btn.dataset.target);
+// Eventy nawigacji dolnej
+document.querySelectorAll('.bottom-nav button').forEach(btn => {
+    btn.onclick = () => window.app.navigate(btn.dataset.target);
 });
 
-// --- 5. LOGIKA PLANÓW ---
-function renderPlansGrid() {
+// --- LOGIKA APLIKACJI ---
+
+// 1. Dashboard
+function renderDashboard() {
     const grid = document.getElementById('daysGrid');
     grid.innerHTML = '';
-    Object.keys(appState.plans).forEach(day => {
-        const count = appState.plans[day].length;
-        const div = document.createElement('div');
-        div.className = 'day-card';
-        div.innerHTML = `${day} <span>${count} ćw.</span>`;
-        div.onclick = () => openDayEditor(day);
-        grid.appendChild(div);
+    Object.keys(state.plans).forEach(day => {
+        const count = state.plans[day].length;
+        const el = document.createElement('div');
+        el.className = 'day-card';
+        el.innerHTML = `<h3>${day}</h3><span>${count} ćwiczeń</span>`;
+        el.onclick = () => openEditor(day);
+        grid.appendChild(el);
     });
 }
 
-let currentEditDay = null;
-
-function openDayEditor(day) {
-    currentEditDay = day;
+// 2. Edytor
+let currentDay = null;
+function openEditor(day) {
+    currentDay = day;
     document.getElementById('editorTitle').innerText = day;
     renderEditorList();
-    
-    // Setup przycisku startu
     const btnStart = document.getElementById('btnStartWorkout');
-    if (appState.plans[day].length > 0) {
-        btnStart.style.display = 'block';
+    
+    if (state.plans[day].length > 0) {
+        btnStart.style.display = 'flex';
         btnStart.onclick = () => startWorkout(day);
     } else {
         btnStart.style.display = 'none';
     }
     
-    showView('view-editor');
+    app.navigate('view-editor');
 }
 
 function renderEditorList() {
     const list = document.getElementById('editorList');
     list.innerHTML = '';
-    appState.plans[currentEditDay].forEach((ex, idx) => {
-        const el = document.createElement('div');
-        el.className = 'exercise-item';
-        el.innerHTML = `
+    state.plans[currentDay].forEach((ex, i) => {
+        const div = document.createElement('div');
+        div.className = 'exercise-item';
+        div.innerHTML = `
             <div><strong>${ex.name}</strong><br><small>${ex.sets} x ${ex.reps}</small></div>
-            <button class="btn-danger" style="width:30px;height:30px;padding:0">x</button>
+            <button class="btn-action" style="background:var(--danger);width:35px;height:35px;font-size:1rem" id="del-${i}">
+                <i class="fa-solid fa-trash"></i>
+            </button>
         `;
-        el.querySelector('button').onclick = () => {
-            appState.plans[currentEditDay].splice(idx, 1);
-            triggerSave();
+        list.appendChild(div);
+        div.querySelector(`#del-${i}`).onclick = () => {
+            state.plans[currentDay].splice(i, 1);
+            saveData();
             renderEditorList();
         };
-        list.appendChild(el);
     });
 }
 
-// Dodawanie ćwiczenia
 document.getElementById('btnAddEx').onclick = () => {
-    const name = document.getElementById('newExName').value;
-    const sets = document.getElementById('newExSets').value;
-    const reps = document.getElementById('newExReps').value;
+    const name = document.getElementById('exName').value;
+    const sets = document.getElementById('exSets').value;
+    const reps = document.getElementById('exReps').value;
     if (name) {
-        appState.plans[currentEditDay].push({ name, sets, reps });
-        triggerSave();
+        state.plans[currentDay].push({ name, sets, reps });
+        document.getElementById('exName').value = '';
+        saveData();
         renderEditorList();
-        document.getElementById('newExName').value = '';
-        document.getElementById('btnStartWorkout').style.display = 'block';
-        document.getElementById('btnStartWorkout').onclick = () => startWorkout(currentEditDay);
     }
 };
 
-// --- 6. LOGIKA TRENINGU ---
+// 3. Trening
 function startWorkout(day) {
-    if (appState.activeWorkout.isActive) {
-        if (!confirm("Masz już aktywny trening. Zastąpić go?")) return;
-    }
+    if (state.activeWorkout.isActive && !confirm("Masz aktywny trening. Zastąpić go?")) return;
 
-    appState.activeWorkout = {
+    state.activeWorkout = {
         isActive: true,
         day: day,
         startTime: Date.now(),
-        exercises: appState.plans[day].map(ex => ({ ...ex, logs: [] }))
+        exercises: state.plans[day].map(ex => ({ ...ex, logs: [] }))
     };
-    triggerSave();
-    startMasterTimer();
+    
+    document.getElementById('navWorkout').style.display = 'flex';
+    saveData();
+    startTimer();
     renderWorkoutView();
-    document.getElementById('navWorkoutBtn').style.display = 'flex';
-    showView('view-workout');
+    app.navigate('view-workout');
 }
 
 function renderWorkoutView() {
     const list = document.getElementById('workoutList');
-    const data = appState.activeWorkout;
-    document.getElementById('workoutDayTitle').innerText = data.day;
+    const w = state.activeWorkout;
+    document.getElementById('workoutTitle').innerText = w.day;
     list.innerHTML = '';
 
-    data.exercises.forEach((ex, exIdx) => {
+    w.exercises.forEach((ex, i) => {
         const card = document.createElement('div');
         card.className = 'card';
-        
-        // Wyświetlanie wykonanych serii
-        let logsHtml = ex.logs.map((l, i) => 
-            `<div class="done-set"><span>Seria ${i+1}</span> <span>${l.kg}kg x ${l.reps}</span></div>`
+        let logsHtml = ex.logs.map((l, li) => 
+            `<div style="display:flex;justify-content:space-between;color:var(--success);margin-top:5px;border-bottom:1px solid #333;padding-bottom:5px;">
+                <span>Seria ${li+1}</span> <span>${l.kg}kg x ${l.reps}</span>
+            </div>`
         ).join('');
 
         card.innerHTML = `
-            <h3>${ex.name} <small style="color:#666">(${ex.sets}x${ex.reps})</small></h3>
-            <div id="logs-${exIdx}">${logsHtml}</div>
-            <div class="set-row">
-                <input type="number" placeholder="kg" id="w-${exIdx}" style="width:70px">
-                <input type="number" placeholder="pow" id="r-${exIdx}" style="width:60px" value="${ex.reps}">
-                <button class="btn-small" id="add-${exIdx}"><i class="fa-solid fa-check"></i></button>
+            <h3>${ex.name} <small>(${ex.sets}x${ex.reps})</small></h3>
+            <div style="margin:10px 0">${logsHtml}</div>
+            <div class="set-inputs">
+                <input type="number" placeholder="kg" id="w-${i}">
+                <input type="number" placeholder="pow" value="${ex.reps}" id="r-${i}">
+                <button class="btn-action" id="ok-${i}"><i class="fa-solid fa-check"></i></button>
             </div>
         `;
         list.appendChild(card);
-
-        card.querySelector(`#add-${exIdx}`).onclick = () => {
-            const kg = document.getElementById(`w-${exIdx}`).value;
-            const r = document.getElementById(`r-${exIdx}`).value;
-            if (kg && r) {
-                ex.logs.push({ kg, reps: r });
-                triggerSave();
-                renderWorkoutView(); // Przeładuj widok
+        card.querySelector(`#ok-${i}`).onclick = () => {
+            const kg = document.getElementById(`w-${i}`).value;
+            const reps = document.getElementById(`r-${i}`).value;
+            if (kg && reps) {
+                ex.logs.push({ kg, reps });
+                saveData();
+                renderWorkoutView();
             }
         };
     });
 }
 
-function startMasterTimer() {
-    if (masterTimer) clearInterval(masterTimer);
-    const display = document.getElementById('workoutTimer');
+function startTimer() {
+    if (masterTimerInterval) clearInterval(masterTimerInterval);
+    const display = document.getElementById('timerDisplay');
     
-    masterTimer = setInterval(() => {
-        if (!appState.activeWorkout.isActive) return;
-        const diff = Date.now() - appState.activeWorkout.startTime;
+    masterTimerInterval = setInterval(() => {
+        if (!state.activeWorkout.isActive) return;
+        const diff = Date.now() - state.activeWorkout.startTime;
         const d = new Date(diff);
         display.innerText = d.toISOString().substr(11, 8);
     }, 1000);
 }
 
-document.getElementById('btnFinishWorkout').onclick = () => {
+document.getElementById('btnFinish').onclick = () => {
     if (confirm("Zakończyć trening?")) {
-        const w = appState.activeWorkout;
-        const duration = document.getElementById('workoutTimer').innerText;
+        const w = state.activeWorkout;
+        const hasData = w.exercises.some(e => e.logs.length > 0);
         
-        // Zapisz do historii tylko jeśli coś zrobiono
-        const doneEx = w.exercises.filter(e => e.logs.length > 0);
-        if (doneEx.length > 0) {
-            appState.logs.push({
+        if (hasData) {
+            state.logs.push({
                 date: new Date().toISOString().split('T')[0],
                 day: w.day,
-                duration: duration,
-                details: doneEx
+                duration: document.getElementById('timerDisplay').innerText,
+                details: w.exercises.filter(e => e.logs.length > 0)
             });
         }
-
-        // Reset
-        appState.activeWorkout = { isActive: false, day: null, startTime: null, exercises: [] };
-        clearInterval(masterTimer);
-        document.getElementById('navWorkoutBtn').style.display = 'none';
-        triggerSave();
-        showView('view-history');
-        showToast("Trening zapisany!", "success");
+        
+        state.activeWorkout = { isActive: false };
+        document.getElementById('navWorkout').style.display = 'none';
+        clearInterval(masterTimerInterval);
+        saveData();
+        app.navigate('view-history');
+        showToast("Trening zapisany!", "green");
     }
 };
 
-// --- 7. HISTORIA I STATYSTYKI ---
+// 4. Historia i Profil
 function renderHistory() {
     const list = document.getElementById('historyList');
-    list.innerHTML = appState.logs.slice().reverse().map(l => `
+    list.innerHTML = state.logs.slice().reverse().map(l => `
         <div class="card" style="border-left:4px solid var(--success)">
-            <div style="display:flex;justify-content:space-between">
+            <div style="display:flex;justify-content:space-between;margin-bottom:5px;">
                 <strong>${l.date}</strong>
                 <span>${l.day}</span>
             </div>
-            <small style="color:#888">Czas: ${l.duration} | Ćwiczeń: ${l.details.length}</small>
+            <div style="font-size:0.85rem;color:#aaa">Czas: ${l.duration} | Ćw: ${l.details.length}</div>
         </div>
-    `).join('') || '<p style="text-align:center;color:#666">Brak historii.</p>';
+    `).join('') || '<div style="text-align:center;padding:20px;color:#666">Brak historii</div>';
 }
 
 function renderStats() {
     const ctx = document.getElementById('statsChart');
-    // Prosta logika: suma tonażu (kg * reps) per data
-    const dataMap = {};
-    appState.logs.forEach(l => {
-        let totalVol = 0;
-        l.details.forEach(ex => {
-            ex.logs.forEach(s => totalVol += (Number(s.kg) * Number(s.reps)));
-        });
-        dataMap[l.date] = (dataMap[l.date] || 0) + totalVol;
+    if (!ctx) return;
+    
+    const volData = {};
+    state.logs.forEach(l => {
+        let vol = 0;
+        l.details.forEach(e => e.logs.forEach(s => vol += (Number(s.kg) * Number(s.reps))));
+        volData[l.date] = (volData[l.date] || 0) + vol;
     });
 
-    new Chart(ctx, {
-        type: 'line',
+    if (window.myChart) window.myChart.destroy();
+    window.myChart = new Chart(ctx, {
+        type: 'bar',
         data: {
-            labels: Object.keys(dataMap),
-            datasets: [{
-                label: 'Objętość (kg)',
-                data: Object.values(dataMap),
-                borderColor: '#3b82f6',
-                tension: 0.4
-            }]
+            labels: Object.keys(volData),
+            datasets: [{ label: 'Kg', data: Object.values(volData), backgroundColor: '#4f46e5' }]
         },
         options: { responsive: true, plugins: { legend: { display: false } } }
     });
 }
 
-function refreshUI() {
-    // Odśwież aktualnie otwarty widok, jeśli trzeba
-    const active = document.querySelector('.view.active');
-    if (active.id === 'view-plans') renderPlansGrid();
-    if (active.id === 'view-active-workout' && appState.activeWorkout.isActive) renderWorkoutView();
-}
-
-// --- 8. HANDLERY FORMULARZY ---
+// --- OBSŁUGA LOGOWANIA/WYLOGOWANIA ---
 document.getElementById('authForm').onsubmit = async (e) => {
     e.preventDefault();
-    const mail = document.getElementById('authEmail').value;
-    const pass = document.getElementById('authPass').value;
+    const email = document.getElementById('email').value;
+    const pass = document.getElementById('password').value;
     const errBox = document.getElementById('authError');
-    els.loader.style.display = 'flex';
     
+    errBox.innerText = "Przetwarzanie...";
     try {
-        await signInWithEmailAndPassword(auth, mail, pass);
+        await signInWithEmailAndPassword(auth, email, pass);
     } catch (err) {
-        // Jeśli nie znaleziono użytkownika, spróbuj zarejestrować
         if (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential') {
-             try {
-                 await createUserWithEmailAndPassword(auth, mail, pass);
-             } catch (regErr) {
-                 errBox.innerText = "Błąd: " + regErr.message;
-                 els.loader.style.display = 'none';
-             }
+            try {
+                await createUserWithEmailAndPassword(auth, email, pass);
+            } catch (regErr) {
+                errBox.innerText = regErr.message;
+            }
         } else {
-            errBox.innerText = "Błąd: " + err.message;
-            els.loader.style.display = 'none';
+            errBox.innerText = "Błąd logowania: " + err.message;
         }
     }
 };
 
-document.getElementById('btnLogout').onclick = () => signOut(auth);
+document.getElementById('btnLogout').onclick = async () => {
+    if (confirm("Wylogować?")) {
+        await signOut(auth);
+        // onAuthStateChanged obsłuży resztę
+    }
+};
 
-// START
-initAuth();
+function refreshUI() {
+    const active = document.querySelector('.view.active');
+    if (active) window.app.navigate(active.id);
+}
+
+function showToast(msg, color) {
+    const t = document.createElement('div');
+    t.className = 'toast';
+    t.style.borderLeft = `4px solid ${color === 'red' ? 'var(--danger)' : 'var(--success)'}`;
+    t.innerText = msg;
+    document.getElementById('toastContainer').appendChild(t);
+    setTimeout(() => t.remove(), 3000);
+}
+
+// Start
+initApp();

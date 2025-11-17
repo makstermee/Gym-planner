@@ -28,11 +28,15 @@ let masterTimerInterval = null;
 let statsChart = null;
 let currentDay = null;
 
+// --- BEZPIECZNIK DANYCH (NOWOŚĆ) ---
+// To jest klucz do naprawy problemu. Nie pozwalamy na zapis, dopóki dane nie zjadą z chmury.
+let isDataLoaded = false; 
+
 // --- START APLIKACJI ---
 document.addEventListener('DOMContentLoaded', () => {
 
     // Zmienne DOM
-    const appLoader = document.getElementById('appLoader'); // Nasz nowy loader
+    const appLoader = document.getElementById('appLoader');
     const dayList = document.getElementById('dayList');
     const logArea = document.getElementById('logArea');
     const masterTimerDisplay = document.getElementById('masterTimerDisplay');
@@ -46,7 +50,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const configWarning = document.getElementById('configWarning');
     const panels = document.querySelectorAll('.panel');
     
-    // Funkcja ukrywająca loader
     function hideLoader() {
         if(appLoader) appLoader.style.display = 'none';
     }
@@ -55,7 +58,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!window.IS_FIREBASE_CONFIGURED) {
         configWarning.style.display = 'block';
         authForm.style.display = 'none';
-        hideLoader(); // Ukryj loader, żeby pokazać błąd
+        hideLoader();
     } else {
         configWarning.style.display = 'none';
         
@@ -65,11 +68,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 currentUserId = user.uid;
                 currentUserEmail = user.email;
                 
-                // UI Zalogowanego
                 authForm.style.display = 'none';
                 logoutBtn.style.display = 'block';
                 bottomNav.style.display = 'flex';
                 welcomeMsg.textContent = `, ${user.email.split('@')[0]}!`;
+
+                // Blokujemy zapis do momentu pobrania danych
+                isDataLoaded = false; 
 
                 // Pobieranie danych w tle
                 const docRef = doc(db, `users/${currentUserId}/data/user_state`);
@@ -79,26 +84,40 @@ document.addEventListener('DOMContentLoaded', () => {
                 firestoreUnsubscribe = onSnapshot(docRef, (snap) => {
                     if (snap.exists()) {
                         const data = snap.data();
-                        // Scalamy dane
-                        state = { ...defaultUserState, ...data, plans: { ...defaultUserState.plans, ...(data.plans||{}) } };
+                        // Scalamy dane z chmury
+                        state = { 
+                            ...defaultUserState, 
+                            ...data, 
+                            plans: { ...defaultUserState.plans, ...(data.plans||{}) } 
+                        };
+                        console.log("Pobrano dane z chmury.");
                     } else {
-                        saveState(); // Tworzymy profil
+                        console.log("Profil nie istnieje, tworzenie nowego.");
+                        // Pozwalamy na zapis, bo to nowy profil
+                        isDataLoaded = true; 
+                        saveState(); 
                     }
                     
-                    // DANE SĄ GOTOWE -> Renderujemy i UKRYWAMY LOADER
+                    // ZDEJMUJEMY BLOKADĘ - teraz można bezpiecznie zapisywać
+                    isDataLoaded = true; 
+
+                    // Renderujemy i ukrywamy loader
                     renderDayList(); 
                     initAppUI(); 
-                    hideLoader(); // <--- TU JEST KLUCZ: Loader znika dopiero teraz!
+                    hideLoader(); 
                     
                 }, (error) => {
                     console.error("Błąd Firebase:", error);
-                    hideLoader(); // W razie błędu też ukryj, żeby nie wisiało
+                    // W razie błędu zdejmujemy loader, ale blokada zapisu zostaje (dla bezpieczeństwa)
+                    hideLoader(); 
+                    showErrorModal("Błąd pobierania danych!");
                 });
 
             } else {
                 // Wylogowano
                 if(firestoreUnsubscribe) firestoreUnsubscribe();
                 currentUserId = null;
+                isDataLoaded = false; // Blokujemy zapis
                 state = JSON.parse(JSON.stringify(defaultUserState));
                 
                 authForm.style.display = 'block';
@@ -106,23 +125,37 @@ document.addEventListener('DOMContentLoaded', () => {
                 bottomNav.style.display = 'none';
                 welcomeMsg.textContent = '';
                 showPanel('panel-auth');
-                hideLoader(); // Jeśli wylogowany, ukryj loader od razu, żeby mógł się zalogować
+                hideLoader();
             }
         });
     }
 
-    // --- Reszta logiki (bez zmian, skrócona dla wygody) ---
-    
+    // --- Funkcja Zapisu z ZABEZPIECZENIEM ---
     async function saveState() {
         if (!currentUserId || !db) return;
-        try { await setDoc(doc(db, `users/${currentUserId}/data/user_state`), state); } catch (e) { console.error(e); }
+        
+        // --- TUTAJ JEST POPRAWKA ---
+        if (!isDataLoaded) {
+            console.warn("PRÓBA ZAPISU ZABLOKOWANA: Dane jeszcze nie zostały wczytane.");
+            return; 
+        }
+        // ---------------------------
+
+        try { 
+            await setDoc(doc(db, `users/${currentUserId}/data/user_state`), state); 
+            console.log("Zapisano stan.");
+        } catch (e) { 
+            console.error("Błąd zapisu:", e);
+            showErrorModal("Nie udało się zapisać zmian (brak internetu?)");
+        }
     }
+
+    // --- Reszta logiki ---
 
     loginBtn.onclick = async () => {
         const e = document.getElementById('authEmail').value;
         const p = document.getElementById('authPassword').value;
         if(!e||!p) return authError.textContent="Podaj dane.";
-        // Pokaż loader podczas logowania
         if(appLoader) appLoader.style.display = 'flex';
         try { await signInWithEmailAndPassword(auth,e,p); showPanel('panel-main'); } 
         catch(err) { authError.textContent="Błąd logowania."; hideLoader(); }
@@ -143,6 +176,16 @@ document.addEventListener('DOMContentLoaded', () => {
             if(auth) await signOut(auth);
         }
     };
+
+    // Pomocnicze modale
+    function showErrorModal(msg, type='error') {
+        const d = document.createElement('div');
+        d.className = 'modal-message';
+        d.style.background = type==='error'?'var(--danger)':(type==='success'?'var(--success)':'var(--accent)');
+        d.innerHTML = `<strong>${msg}</strong>`;
+        document.body.appendChild(d);
+        setTimeout(()=>d.remove(),3000);
+    }
 
     function initAppUI() {
         if (state.activeWorkout.isActive && !masterTimerInterval) {

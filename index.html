@@ -3,150 +3,165 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="theme-color" content="#000000">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <title>Gym Planner Pro</title>
     
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <title>Gym Planner Ultimate</title>
+    
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;500;700&display=swap" rel="stylesheet">
+    
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-    <div id="splashScreen">
-        <div class="spinner"></div>
-        <h2 style="margin-top:15px; font-weight:300;">Gym<span style="color:var(--primary)">Plan</span></h2>
+    <div id="globalLoader">
+        <div class="spinner-box">
+            <div class="spinner"></div>
+            <div class="loader-text">Ładowanie profilu...</div>
+        </div>
     </div>
 
-    <div id="toastContainer"></div>
+    <div id="toastArea"></div>
 
-    <header class="top-bar">
-        <div class="logo">GymPlan <span id="appVersion">v3.0</span></div>
-        <div id="syncIndicator" class="sync-status"><i class="fa-solid fa-cloud"></i></div>
+    <header class="app-header">
+        <div class="brand">
+            <i class="fa-solid fa-dumbbell"></i> Gym<span class="highlight">Pro</span>
+        </div>
+        <div class="status-indicator">
+            <span id="syncStatus" class="status-dot"></span>
+        </div>
     </header>
 
-    <main id="appContainer">
+    <main id="mainView">
         
         <section id="view-auth" class="view active">
-            <div class="auth-content">
-                <h1>Witaj 👋</h1>
-                <p>Twoje treningi w jednym miejscu.</p>
+            <div class="auth-container">
+                <h1>Witaj w Formie</h1>
+                <p class="subtitle">Twój progres, Twoje zasady.</p>
                 
                 <form id="authForm">
-                    <div class="input-box">
-                        <i class="fa-solid fa-at"></i>
-                        <input type="email" id="email" placeholder="Adres e-mail" required autocomplete="email">
+                    <div class="input-wrapper">
+                        <i class="fa-solid fa-envelope"></i>
+                        <input type="email" id="authEmail" placeholder="Adres e-mail" required autocomplete="email">
                     </div>
-                    <div class="input-box">
-                        <i class="fa-solid fa-key"></i>
-                        <input type="password" id="password" placeholder="Hasło (min. 6 znaków)" required autocomplete="current-password">
+                    <div class="input-wrapper">
+                        <i class="fa-solid fa-lock"></i>
+                        <input type="password" id="authPass" placeholder="Hasło (min. 6 znaków)" required autocomplete="current-password">
                     </div>
-                    <button type="submit" class="btn-full btn-glow">Zaloguj / Zarejestruj</button>
-                    <p id="authError" class="error-text"></p>
+                    <button type="submit" class="btn-primary btn-lg">
+                        Zaloguj / Zarejestruj
+                    </button>
                 </form>
+                <div id="authMsg" class="error-message"></div>
             </div>
         </section>
 
         <section id="view-dashboard" class="view">
-            <h2 class="page-title">Twój Plan</h2>
-            <div id="daysGrid" class="grid-layout"></div>
+            <div class="section-header">
+                <h2>Twój Tydzień</h2>
+                <p class="date-display" id="currentDateDisplay">...</p>
+            </div>
+            <div id="dashboardGrid" class="grid-container">
+                </div>
         </section>
 
         <section id="view-editor" class="view">
-            <div class="nav-header">
-                <button class="btn-icon" onclick="app.navigate('view-dashboard')"><i class="fa-solid fa-arrow-left"></i> Wróć</button>
-                <h2 id="editorTitle">Dzień</h2>
+            <div class="view-nav">
+                <button class="btn-icon" data-action="back" data-target="view-dashboard">
+                    <i class="fa-solid fa-chevron-left"></i> Wróć
+                </button>
+                <h2 id="editorTitle">...</h2>
             </div>
 
-            <div class="card editor-add-box">
-                <input type="text" id="exName" placeholder="Nazwa (np. Ławka)">
-                <div class="row">
-                    <input type="number" id="exSets" placeholder="Serie" value="3">
-                    <input type="number" id="exReps" placeholder="Powt." value="10">
-                    <button id="btnAddEx" class="btn-action"><i class="fa-solid fa-plus"></i></button>
+            <div class="add-exercise-panel">
+                <input type="text" id="exNameInput" placeholder="Nazwa ćwiczenia">
+                <div class="row-inputs">
+                    <input type="number" id="exSetsInput" placeholder="Serie" value="3">
+                    <input type="number" id="exRepsInput" placeholder="Powt." value="10">
+                    <button id="addExerciseBtn" class="btn-success">
+                        <i class="fa-solid fa-plus"></i>
+                    </button>
                 </div>
             </div>
 
-            <div id="editorList" class="scroll-list"></div>
+            <div id="editorList" class="list-scroller"></div>
 
-            <div class="bottom-spacer"></div>
-            <button id="btnStartWorkout" class="floating-action-btn">
-                <i class="fa-solid fa-play"></i> ROZPOCZNIJ
-            </button>
+            <div class="fab-container">
+                <button id="startWorkoutBtn" class="fab-btn">
+                    <i class="fa-solid fa-play"></i> START
+                </button>
+            </div>
         </section>
 
         <section id="view-workout" class="view">
-            <div class="workout-top">
+            <div class="workout-header-sticky">
                 <div>
-                    <span class="sub-label">TRENING</span>
-                    <h2 id="workoutTitle">...</h2>
+                    <span class="tiny-label">TRENING</span>
+                    <h2 id="workoutDayLabel">...</h2>
                 </div>
-                <div id="timerDisplay" class="timer">00:00:00</div>
+                <div class="timer-box" id="workoutTimer">00:00:00</div>
             </div>
 
-            <div id="workoutList" class="scroll-list"></div>
+            <div id="workoutExercisesList" class="list-scroller padded-bottom"></div>
 
-            <div class="bottom-actions">
-                <button id="btnFinish" class="btn-full btn-danger">Zakończ Trening</button>
+            <div class="bottom-action-bar">
+                <button id="finishWorkoutBtn" class="btn-danger btn-lg">
+                    <i class="fa-solid fa-flag-checkered"></i> Zakończ
+                </button>
             </div>
         </section>
 
         <section id="view-history" class="view">
-            <h2 class="page-title">Historia</h2>
-            <div id="historyList" class="scroll-list"></div>
+            <div class="section-header">
+                <h2>Historia</h2>
+            </div>
+            <div id="historyList" class="list-scroller"></div>
         </section>
 
         <section id="view-profile" class="view">
-            <h2 class="page-title">Profil</h2>
-            <div class="card profile-info">
-                <p>Zalogowany jako:</p>
-                <strong id="userEmail" style="color:var(--primary)">...</strong>
-                <br><br>
-                <button id="btnLogout" class="btn-outline" style="width:100%">Wyloguj się</button>
+            <div class="section-header">
+                <h2>Profil</h2>
             </div>
-            <div class="card">
-                <h3>Statystyki (Objętość)</h3>
-                <canvas id="statsChart"></canvas>
+            
+            <div class="profile-card">
+                <div class="user-avatar">
+                    <i class="fa-solid fa-user"></i>
+                </div>
+                <p id="userEmailDisplay">...</p>
+                <button id="logoutBtn" class="btn-outline">Wyloguj się</button>
             </div>
-        </section>
 
+            <div class="chart-container">
+                <canvas id="volumeChart"></canvas>
+            </div>
+            
+            <div class="version-info">v3.5.0 Pro (Stable)</div>
+        </section>
     </main>
 
-    <nav class="bottom-nav" id="mainNav">
-        <button data-target="view-dashboard" class="active">
-            <i class="fa-solid fa-calendar"></i> Plan
+    <nav class="bottom-tab-bar" id="mainNavBar">
+        <button data-target="view-dashboard" class="nav-item active">
+            <i class="fa-solid fa-calendar-days"></i>
+            <span>Plan</span>
         </button>
-        <button data-target="view-workout" id="navWorkout" style="display:none; color:var(--accent)">
-            <i class="fa-solid fa-dumbbell"></i> Trening
+        <button data-target="view-workout" class="nav-item special-nav" id="navWorkoutBtn">
+            <i class="fa-solid fa-person-running"></i>
+            <span>Trening</span>
         </button>
-        <button data-target="view-history">
-            <i class="fa-solid fa-clock-rotate-left"></i> Historia
+        <button data-target="view-history" class="nav-item">
+            <i class="fa-solid fa-clock-rotate-left"></i>
+            <span>Historia</span>
         </button>
-        <button data-target="view-profile">
-            <i class="fa-solid fa-user"></i> Profil
+        <button data-target="view-profile" class="nav-item">
+            <i class="fa-solid fa-gear"></i>
+            <span>Profil</span>
         </button>
     </nav>
 
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-        const firebaseConfig = {
-            apiKey: "AIzaSyCacBxUhSiqaaCBrmVVKluMHMs3iMpR_cA",
-            authDomain: "pro-plan-e6f00.firebaseapp.com",
-            databaseURL: "https://pro-plan-e6f00-default-rtdb.europe-west1.firebasedabase.app",
-            projectId: "pro-plan-e6f00",
-            storageBucket: "pro-plan-e6f00.firebasestorage.app",
-            messagingSenderId: "887703996706",
-            appId: "1:887703996706:web:b7363c891b41b7d4697d7b",
-            measurementId: "G-1WTB0NNLEB"
-        };
-
-        const app = initializeApp(firebaseConfig);
-        window.auth = getAuth(app);
-        window.db = getFirestore(app);
-    </script>
     <script type="module" src="app-pro.js"></script>
 </body>
 </html>

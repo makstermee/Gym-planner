@@ -2,116 +2,129 @@
 <html lang="pl">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Gym Planner Pro 2.0</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>Gym Planner Pro</title>
+    
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-    <div id="appLoader">
+    <div id="splashScreen">
         <div class="spinner"></div>
-        <p>Ładowanie profilu...</p>
+        <h2 style="margin-top:15px; font-weight:300;">Gym<span style="color:var(--primary)">Plan</span></h2>
     </div>
 
     <div id="toastContainer"></div>
 
-    <header class="top-nav">
-        <div class="logo"><i class="fa-solid fa-dumbbell"></i> GymPlan</div>
-        <div id="cloudStatus" class="cloud-status"><i class="fa-solid fa-cloud"></i></div>
+    <header class="top-bar">
+        <div class="logo">GymPlan <span id="appVersion">v3.0</span></div>
+        <div id="syncIndicator" class="sync-status"><i class="fa-solid fa-cloud"></i></div>
     </header>
 
-    <main id="mainContainer">
+    <main id="appContainer">
         
         <section id="view-auth" class="view active">
-            <div class="auth-box">
-                <h2>Witaj w formie! 👋</h2>
-                <p>Zaloguj się, aby synchronizować treningi.</p>
+            <div class="auth-content">
+                <h1>Witaj 👋</h1>
+                <p>Twoje treningi w jednym miejscu.</p>
+                
                 <form id="authForm">
-                    <div class="input-group">
-                        <i class="fa-solid fa-envelope"></i>
-                        <input type="email" id="authEmail" placeholder="Email" required>
+                    <div class="input-box">
+                        <i class="fa-solid fa-at"></i>
+                        <input type="email" id="email" placeholder="Adres e-mail" required autocomplete="email">
                     </div>
-                    <div class="input-group">
-                        <i class="fa-solid fa-lock"></i>
-                        <input type="password" id="authPass" placeholder="Hasło (min. 6 znaków)" required>
+                    <div class="input-box">
+                        <i class="fa-solid fa-key"></i>
+                        <input type="password" id="password" placeholder="Hasło (min. 6 znaków)" required autocomplete="current-password">
                     </div>
-                    <button type="submit" id="btnLogin" class="btn-primary">Zaloguj / Rejestruj</button>
+                    <button type="submit" class="btn-full btn-glow">Zaloguj / Zarejestruj</button>
+                    <p id="authError" class="error-text"></p>
                 </form>
-                <p id="authError" class="error-msg"></p>
             </div>
         </section>
 
-        <section id="view-plans" class="view">
-            <h2 class="section-title">Twój Tydzień</h2>
-            <div id="daysGrid" class="grid-container">
-                </div>
+        <section id="view-dashboard" class="view">
+            <h2 class="page-title">Twój Plan</h2>
+            <div id="daysGrid" class="grid-layout"></div>
         </section>
 
         <section id="view-editor" class="view">
-            <div class="header-row">
-                <button class="btn-icon" onclick="window.app.router('view-plans')"><i class="fa-solid fa-arrow-left"></i></button>
-                <h2 id="editorTitle">Poniedziałek</h2>
-                <button class="btn-icon" id="btnStartWorkout"><i class="fa-solid fa-play"></i></button>
+            <div class="nav-header">
+                <button class="btn-icon" onclick="app.navigate('view-dashboard')"><i class="fa-solid fa-arrow-left"></i> Wróć</button>
+                <h2 id="editorTitle">Dzień</h2>
             </div>
-            
-            <div class="add-exercise-box">
-                <input type="text" id="newExName" placeholder="Nazwa ćwiczenia">
-                <div class="row-inputs">
-                    <input type="number" id="newExSets" placeholder="Serie" value="3">
-                    <input type="number" id="newExReps" placeholder="Powt." value="10">
-                    <button id="btnAddEx" class="btn-small"><i class="fa-solid fa-plus"></i></button>
+
+            <div class="card editor-add-box">
+                <input type="text" id="exName" placeholder="Nazwa (np. Ławka)">
+                <div class="row">
+                    <input type="number" id="exSets" placeholder="Serie" value="3">
+                    <input type="number" id="exReps" placeholder="Powt." value="10">
+                    <button id="btnAddEx" class="btn-action"><i class="fa-solid fa-plus"></i></button>
                 </div>
             </div>
 
-            <div id="editorList" class="list-container"></div>
-        </section>
+            <div id="editorList" class="scroll-list"></div>
 
-        <section id="view-workout" class="view">
-            <div class="workout-header">
-                <div>
-                    <small>Trening:</small>
-                    <h2 id="workoutDayTitle">...</h2>
-                </div>
-                <div id="workoutTimer" class="timer-badge">00:00:00</div>
-            </div>
-
-            <div id="workoutList" class="list-container"></div>
-
-            <button id="btnFinishWorkout" class="btn-danger big-btn">
-                <i class="fa-solid fa-flag-checkered"></i> Zakończ Trening
+            <div class="bottom-spacer"></div>
+            <button id="btnStartWorkout" class="floating-action-btn">
+                <i class="fa-solid fa-play"></i> ROZPOCZNIJ
             </button>
         </section>
 
+        <section id="view-workout" class="view">
+            <div class="workout-top">
+                <div>
+                    <span class="sub-label">TRENING</span>
+                    <h2 id="workoutTitle">...</h2>
+                </div>
+                <div id="timerDisplay" class="timer">00:00:00</div>
+            </div>
+
+            <div id="workoutList" class="scroll-list"></div>
+
+            <div class="bottom-actions">
+                <button id="btnFinish" class="btn-full btn-danger">Zakończ Trening</button>
+            </div>
+        </section>
+
         <section id="view-history" class="view">
-            <h2 class="section-title">Historia Treningów</h2>
-            <div id="historyList" class="list-container"></div>
+            <h2 class="page-title">Historia</h2>
+            <div id="historyList" class="scroll-list"></div>
         </section>
 
         <section id="view-profile" class="view">
-            <h2 class="section-title">Twój Profil</h2>
-            <div class="card profile-card">
+            <h2 class="page-title">Profil</h2>
+            <div class="card profile-info">
                 <p>Zalogowany jako:</p>
-                <strong id="userEmailDisplay">...</strong>
-                <button id="btnLogout" class="btn-outline">Wyloguj się</button>
+                <strong id="userEmail" style="color:var(--primary)">...</strong>
+                <br><br>
+                <button id="btnLogout" class="btn-outline" style="width:100%">Wyloguj się</button>
             </div>
-            
-            <div class="card chart-card">
+            <div class="card">
+                <h3>Statystyki (Objętość)</h3>
                 <canvas id="statsChart"></canvas>
-            </div>
-            <div style="text-align:center; margin-top:20px; color:#666; font-size:0.8rem;">
-                Gym Planner Pro v2.0 (Optimized)
             </div>
         </section>
 
     </main>
 
-    <nav class="bottom-nav" id="bottomNav">
-        <button data-target="view-plans" class="active"><i class="fa-solid fa-calendar-days"></i><span>Plan</span></button>
-        <button data-target="view-workout" id="navWorkoutBtn" style="display:none; color:var(--accent)"><i class="fa-solid fa-person-running"></i><span>Trening</span></button>
-        <button data-target="view-history"><i class="fa-solid fa-clock-rotate-left"></i><span>Historia</span></button>
-        <button data-target="view-profile"><i class="fa-solid fa-user"></i><span>Profil</span></button>
+    <nav class="bottom-nav" id="mainNav">
+        <button data-target="view-dashboard" class="active">
+            <i class="fa-solid fa-calendar"></i> Plan
+        </button>
+        <button data-target="view-workout" id="navWorkout" style="display:none; color:var(--accent)">
+            <i class="fa-solid fa-dumbbell"></i> Trening
+        </button>
+        <button data-target="view-history">
+            <i class="fa-solid fa-clock-rotate-left"></i> Historia
+        </button>
+        <button data-target="view-profile">
+            <i class="fa-solid fa-user"></i> Profil
+        </button>
     </nav>
 
     <script type="module">
@@ -133,8 +146,7 @@
         const app = initializeApp(firebaseConfig);
         window.auth = getAuth(app);
         window.db = getFirestore(app);
-        window.isFirebaseReady = true;
     </script>
-    <script type="module" src="app-v2.js"></script>
+    <script type="module" src="app-pro.js"></script>
 </body>
 </html>

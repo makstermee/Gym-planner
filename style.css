@@ -1,309 +1,203 @@
 :root {
-  /* USTAWIENIA NA STAŁE (Ciemny Motyw) */
-  --bg: #212121;
-  --card: #333;
-  --text: #f0f0f0;
-  --muted: #ccc;
-  
-  /* Kolory akcentów (bez zmian) */
-  --accent: #ff5722;
-  --accent-hover: #e64a19;
-  --success: #4caf50;
-  --danger: #f44336;
+    --bg: #0f172a; /* Bardzo ciemny granat */
+    --surface: #1e293b;
+    --primary: #3b82f6;
+    --accent: #f59e0b; /* Pomarańczowy akcent */
+    --text: #f1f5f9;
+    --text-muted: #94a3b8;
+    --danger: #ef4444;
+    --success: #22c55e;
+    --radius: 12px;
 }
 
-/* Usunąłem sekcję body.dark, bo teraz jest domyślna w :root */
-
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 body {
-  margin: 0;
-  font-family: 'Inter', sans-serif;
-  background: var(--bg);
-  color: var(--text);
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-  /* Usunięto transition, bo nie ma zmiany motywu */
-}
-
-.top {
-  padding: 16px;
-  text-align: center;
-  background: linear-gradient(90deg, #ff8a65, var(--accent));
-  color: #fff;
-  font-weight: bold;
-  box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-}
-
-.master-timer {
-  font-size: 1.2em;
-  font-weight: bold;
-  color: #fff;
-  margin-top: 5px;
-}
-
-.container {
-  flex: 1;
-  overflow-y: auto;
-  padding: 12px;
-  max-width: 480px;
-  margin: auto;
-  width: 100%;
-}
-
-/* Panele */
-.panel {
-  display: none;
-  animation: fadeIn 0.3s ease-in-out;
-}
-.panel.active {
-  display: block;
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-/* Elementy Formularza */
-.input-row {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 12px;
-  flex-wrap: wrap;
-}
-
-input[type="email"],
-input[type="password"],
-input[type="number"],
-select {
-  flex: 1;
-  padding: 12px;
-  border-radius: 8px;
-  border: 1px solid var(--muted);
-  background: var(--card);
-  color: var(--text);
-  box-shadow: inset 0 1px 3px rgba(0,0,0,0.05);
-  transition: border-color 0.2s;
-  min-width: 100px;
-}
-input:focus, select:focus {
-  border-color: var(--accent);
-  outline: none;
-}
-
-/* Przyciski */
-button {
-  flex: 1;
-  padding: 12px;
-  border: none;
-  border-radius: 8px;
-  background: var(--accent);
-  color: #fff;
-  cursor: pointer;
-  transition: background 0.2s, box-shadow 0.2s;
-  font-weight: bold;
-  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-}
-button:hover:not(:disabled) {
-  background: var(--accent-hover);
-  box-shadow: 0 6px 8px rgba(0,0,0,0.15);
-}
-button:disabled {
-  background: var(--muted);
-  cursor: not-allowed;
-  opacity: 0.7;
-}
-
-.btn-secondary {
-  background: var(--muted);
-  color: #111; /* Ciemny tekst na szarym przycisku dla kontrastu */
-}
-.btn-secondary:hover:not(:disabled) {
-  background: #999;
-}
-
-.btn-success {
-  background: var(--success);
-}
-.btn-success:hover:not(:disabled) {
-  background: #388e3c;
-}
-
-.btn-danger {
-  background: var(--danger);
-}
-.btn-danger:hover:not(:disabled) {
-  background: #d32f2f;
-}
-
-.button-row {
-  display: flex;
-  gap: 10px;
-  margin-top: 15px;
-}
-
-/* Karty i listy */
-.card {
-  background: var(--card);
-  border-radius: 12px;
-  margin-bottom: 10px;
-  padding: 15px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  border-left: 5px solid var(--accent);
-}
-
-.workout-card {
-  background: var(--card);
-  border-radius: 12px;
-  margin-bottom: 15px;
-  padding: 15px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-}
-
-.log-summary-card {
-    display: block;
-    border-left: 5px solid var(--success);
-    cursor: pointer;
-}
-.log-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    font-weight: bold;
-}
-.log-toggle {
-    transition: transform 0.2s;
-}
-
-.day-list button {
-    width: 100%;
-    margin-bottom: 10px;
-    background: var(--card);
+    margin: 0;
+    font-family: 'Segoe UI', Roboto, Helvetica, sans-serif;
+    background-color: var(--bg);
     color: var(--text);
-    border: 1px solid var(--muted);
-    justify-content: space-between;
+    height: 100vh;
     display: flex;
-    padding: 15px;
-    text-align: left;
-    transition: background 0.2s, border-color 0.2s;
-}
-.day-list button:hover {
-    background: #444;
-    border-color: var(--accent);
+    flex-direction: column;
+    overflow: hidden;
 }
 
-/* Aktywny Trening */
-.log-set-form {
-    display: flex;
-    gap: 8px;
-    margin-top: 10px;
-}
-.log-set-form input {
-    flex: 1;
-}
-
-.logged-sets-list {
-    margin: 10px 0;
-    padding: 10px;
-    background: rgba(0,0,0,0.2); /* Lekko ciemniejsze tło */
-    border-radius: 8px;
-}
-.logged-set {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 3px 0;
-    font-size: 0.9em;
-}
-.set-remove {
-    color: var(--danger);
+/* --- UI COMPONENTS --- */
+button {
     cursor: pointer;
-    font-weight: bold;
-    margin-left: 10px;
+    border: none;
+    font-family: inherit;
+    transition: transform 0.1s, opacity 0.2s;
 }
+button:active { transform: scale(0.96); }
 
-.rest-timer-section {
-    display: flex;
-    gap: 8px;
-    margin-top: 15px;
-    padding-top: 10px;
-    border-top: 1px dashed var(--muted);
+.btn-primary {
+    width: 100%;
+    padding: 14px;
+    border-radius: var(--radius);
+    background: var(--primary);
+    color: white;
+    font-weight: 600;
+    font-size: 1rem;
 }
-.rest-timer-display {
-    flex: 2;
-    font-size: 1.1em;
-    font-weight: bold;
+.btn-danger { background: var(--danger); color: white; }
+.btn-outline { background: transparent; border: 1px solid var(--text-muted); color: var(--text); padding: 8px 16px; border-radius: var(--radius); }
+.btn-icon { background: none; color: var(--text); font-size: 1.4rem; padding: 8px; }
+.btn-small { background: var(--success); color: white; border-radius: 8px; width: 40px; }
+
+input {
+    width: 100%;
+    padding: 12px;
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: var(--radius);
+    color: white;
+    outline: none;
+}
+input:focus { border-color: var(--primary); }
+
+/* --- LAYOUT --- */
+.top-nav {
+    padding: 15px 20px;
+    background: var(--surface);
     display: flex;
+    justify-content: space-between;
     align-items: center;
-    justify-content: center;
-    min-width: 60px;
-    border: 1px solid var(--accent);
-    border-radius: 8px;
-    color: var(--accent);
+    box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+    z-index: 10;
 }
-.start-rest-btn {
+.logo { font-weight: 800; font-size: 1.2rem; color: var(--primary); }
+.cloud-status { color: var(--text-muted); font-size: 0.9rem; transition: color 0.3s; }
+.cloud-status.saving { color: var(--accent); animation: pulse 1s infinite; }
+.cloud-status.saved { color: var(--success); }
+
+#mainContainer {
     flex: 1;
-    padding: 8px 0;
-    font-size: 0.9em;
+    position: relative;
+    overflow: hidden;
 }
 
-/* Nawigacja */
+.view {
+    position: absolute;
+    top: 0; left: 0; width: 100%; height: 100%;
+    overflow-y: auto;
+    padding: 20px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(10px);
+    transition: opacity 0.3s ease, transform 0.3s ease;
+    display: none; /* Performance fix */
+}
+.view.active {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0);
+    display: block;
+}
+
+/* --- BOTTOM NAV --- */
 .bottom-nav {
-  display: flex;
-  justify-content: space-around;
-  background: var(--card);
-  border-top: 1px solid #444;
-  position: sticky;
-  bottom: 0;
-  padding: 8px 0;
-  box-shadow: 0 -2px 5px rgba(0,0,0,0.1);
+    background: var(--surface);
+    display: flex;
+    justify-content: space-around;
+    padding: 10px 0 20px 0; /* Extra padding for iPhone Home bar */
+    border-top: 1px solid #334155;
 }
 .bottom-nav button {
-  flex: 1;
-  font-size: 14px;
-  background: none;
-  color: var(--muted);
-  box-shadow: none;
-  padding: 8px 0;
+    background: none;
+    color: var(--text-muted);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    font-size: 0.75rem;
+    gap: 5px;
 }
-.bottom-nav button.active {
-  color: var(--accent);
-  border-bottom: 3px solid var(--accent);
-  padding-bottom: 5px;
-}
-.bottom-nav button:hover {
-  background: rgba(255,255,255,0.05);
-}
+.bottom-nav button i { font-size: 1.3rem; margin-bottom: 2px; }
+.bottom-nav button.active { color: var(--primary); }
 
-/* Modale */
-.modal-message, .modal-confirm {
-    position: fixed;
-    top: 20px;
-    left: 50%;
-    transform: translateX(-50%);
-    padding: 15px 25px;
-    border-radius: 10px;
-    color: white;
-    font-weight: bold;
-    z-index: 1000;
-    box-shadow: 0 4px 10px rgba(0,0,0,0.3);
-    text-align: center;
-    min-width: 250px;
-}
-
-.modal-confirm {
-    top: 50%;
-    transform: translate(-50%, -50%);
-    background: var(--card);
-    color: var(--text);
+/* --- CARDS & LISTS --- */
+.grid-container { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+.day-card {
+    background: var(--surface);
     padding: 20px;
-    border-left: 5px solid var(--accent);
+    border-radius: var(--radius);
+    text-align: center;
+    font-weight: 600;
+    border: 1px solid transparent;
+}
+.day-card:hover { border-color: var(--primary); background: #253045; }
+.day-card span { display: block; font-size: 0.8rem; color: var(--text-muted); margin-top: 5px; }
+
+.card { background: var(--surface); padding: 15px; border-radius: var(--radius); margin-bottom: 15px; }
+.exercise-item {
+    background: var(--surface);
+    margin-bottom: 10px;
+    padding: 15px;
+    border-radius: var(--radius);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
 }
 
-.modal-confirm p {
-    margin-top: 0;
-    margin-bottom: 15px;
+/* --- WORKOUT UI --- */
+.workout-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
 }
+.timer-badge {
+    background: var(--surface);
+    padding: 8px 15px;
+    border-radius: 20px;
+    font-family: monospace;
+    font-size: 1.2rem;
+    color: var(--accent);
+    border: 1px solid var(--accent);
+}
+.set-row {
+    display: flex;
+    gap: 10px;
+    margin-top: 10px;
+    align-items: center;
+}
+.set-row input { text-align: center; }
+.done-set {
+    background: rgba(34, 197, 94, 0.1);
+    padding: 5px 10px;
+    margin-top: 5px;
+    border-radius: 5px;
+    font-size: 0.9rem;
+    display: flex; justify-content: space-between;
+    color: var(--success);
+}
+
+/* --- UTILS --- */
+.auth-box { max-width: 400px; margin: 40px auto; text-align: center; }
+.input-group { position: relative; margin-bottom: 15px; }
+.input-group i { position: absolute; left: 15px; top: 50%; transform: translateY(-50%); color: var(--text-muted); }
+.input-group input { padding-left: 40px; }
+
+#appLoader {
+    position: fixed; inset: 0; background: var(--bg); z-index: 999;
+    display: flex; flex-direction: column; justify-content: center; align-items: center;
+}
+.spinner {
+    width: 40px; height: 40px; border: 4px solid var(--surface);
+    border-top-color: var(--primary); border-radius: 50%;
+    animation: spin 1s linear infinite; margin-bottom: 20px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+
+/* Toasts */
+#toastContainer { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 1000; width: 90%; max-width: 300px; }
+.toast {
+    background: #333; color: white; padding: 12px; border-radius: 8px;
+    margin-bottom: 10px; text-align: center; box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    animation: slideIn 0.3s;
+}
+.toast.success { background: var(--success); }
+.toast.error { background: var(--danger); }
+@keyframes slideIn { from { transform: translateY(-20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }

@@ -10,7 +10,7 @@ import {
 const auth = window.auth;
 const db = window.db;
 
-// --- Domyślny Stan (To co widać natychmiast) ---
+// --- Domyślny Stan ---
 const defaultUserState = {
   "plans": {
     "Poniedziałek": [], "Wtorek": [], "Środa": [],
@@ -24,16 +24,16 @@ let state = JSON.parse(JSON.stringify(defaultUserState));
 let currentUserId = null;
 let currentUserEmail = null; 
 let firestoreUnsubscribe = null; 
-
 let masterTimerInterval = null; 
-let restTimerInterval = null; 
-let currentRestDisplay = null; 
+let statsChart = null;
+let currentDay = null;
 
 // --- START APLIKACJI ---
 document.addEventListener('DOMContentLoaded', () => {
 
-    // 1. ZMIENNE DOM (Pobieramy je raz)
-    const dayList = document.getElementById('dayList'); // To jest najważniejsze
+    // Zmienne DOM
+    const appLoader = document.getElementById('appLoader'); // Nasz nowy loader
+    const dayList = document.getElementById('dayList');
     const logArea = document.getElementById('logArea');
     const masterTimerDisplay = document.getElementById('masterTimerDisplay');
     const welcomeMsg = document.getElementById('welcomeMsg');
@@ -46,44 +46,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const configWarning = document.getElementById('configWarning');
     const panels = document.querySelectorAll('.panel');
     
-    // Zmienne pomocnicze
-    let statsChart = null;
-    let currentDay = null;
-
-    // --- KLUCZOWA ZMIANA: Renderujemy PUSTĄ listę natychmiast! ---
-    // Nie czekamy na internet. Użytkownik widzi dni od razu.
-    renderDayList(); 
-
-    // --- Funkcje pomocnicze ---
-    function showErrorModal(msg, type='error') {
-        const d = document.createElement('div');
-        d.className = 'modal-message';
-        d.style.background = type==='error'?'var(--danger)':(type==='success'?'var(--success)':'var(--accent)');
-        d.innerHTML = `<strong>${msg}</strong>`;
-        document.body.appendChild(d);
-        setTimeout(()=>d.remove(),3000);
+    // Funkcja ukrywająca loader
+    function hideLoader() {
+        if(appLoader) appLoader.style.display = 'none';
     }
 
-    function showConfirmModal(msg, onYes) {
-        if(!confirm(msg)) return; // Upraszczamy modal na telefon dla szybkości
-        onYes();
-    }
-
-    // --- Logika Danych ---
-    function getUserDocRef() {
-        if (!currentUserId || !db) return null;
-        return doc(db, `users/${currentUserId}/data/user_state`);
-    }
-
-    async function saveState() {
-        if (!currentUserId || !db) return;
-        try { await setDoc(getUserDocRef(), state); } catch (e) { console.error(e); }
-    }
-
-    // --- Autoryzacja ---
+    // --- Autoryzacja i Pobieranie Danych ---
     if (!window.IS_FIREBASE_CONFIGURED) {
         configWarning.style.display = 'block';
         authForm.style.display = 'none';
+        hideLoader(); // Ukryj loader, żeby pokazać błąd
     } else {
         configWarning.style.display = 'none';
         
@@ -99,21 +71,28 @@ document.addEventListener('DOMContentLoaded', () => {
                 bottomNav.style.display = 'flex';
                 welcomeMsg.textContent = `, ${user.email.split('@')[0]}!`;
 
-                // Pobieranie danych w tle (UI już jest wyświetlone!)
-                const docRef = getUserDocRef();
+                // Pobieranie danych w tle
+                const docRef = doc(db, `users/${currentUserId}/data/user_state`);
+                
                 if(firestoreUnsubscribe) firestoreUnsubscribe();
+                
                 firestoreUnsubscribe = onSnapshot(docRef, (snap) => {
                     if (snap.exists()) {
                         const data = snap.data();
-                        // Scalamy dane z chmury
+                        // Scalamy dane
                         state = { ...defaultUserState, ...data, plans: { ...defaultUserState.plans, ...(data.plans||{}) } };
-                        console.log("Dane zaktualizowane.");
                     } else {
-                        saveState(); // Tworzymy profil jeśli brak
+                        saveState(); // Tworzymy profil
                     }
-                    // ODŚWIEŻAMY widok dopiero jak dane przyjdą (ale lista już tam jest)
+                    
+                    // DANE SĄ GOTOWE -> Renderujemy i UKRYWAMY LOADER
                     renderDayList(); 
                     initAppUI(); 
+                    hideLoader(); // <--- TU JEST KLUCZ: Loader znika dopiero teraz!
+                    
+                }, (error) => {
+                    console.error("Błąd Firebase:", error);
+                    hideLoader(); // W razie błędu też ukryj, żeby nie wisiało
                 });
 
             } else {
@@ -127,25 +106,37 @@ document.addEventListener('DOMContentLoaded', () => {
                 bottomNav.style.display = 'none';
                 welcomeMsg.textContent = '';
                 showPanel('panel-auth');
+                hideLoader(); // Jeśli wylogowany, ukryj loader od razu, żeby mógł się zalogować
             }
         });
     }
 
-    // --- Obsługa przycisków Auth ---
+    // --- Reszta logiki (bez zmian, skrócona dla wygody) ---
+    
+    async function saveState() {
+        if (!currentUserId || !db) return;
+        try { await setDoc(doc(db, `users/${currentUserId}/data/user_state`), state); } catch (e) { console.error(e); }
+    }
+
     loginBtn.onclick = async () => {
         const e = document.getElementById('authEmail').value;
         const p = document.getElementById('authPassword').value;
         if(!e||!p) return authError.textContent="Podaj dane.";
+        // Pokaż loader podczas logowania
+        if(appLoader) appLoader.style.display = 'flex';
         try { await signInWithEmailAndPassword(auth,e,p); showPanel('panel-main'); } 
-        catch(err) { authError.textContent="Błąd logowania."; }
+        catch(err) { authError.textContent="Błąd logowania."; hideLoader(); }
     };
+
     registerBtn.onclick = async () => {
         const e = document.getElementById('authEmail').value;
         const p = document.getElementById('authPassword').value;
         if(!e||p.length<6) return authError.textContent="Hasło min 6 znaków.";
+        if(appLoader) appLoader.style.display = 'flex';
         try { await createUserWithEmailAndPassword(auth,e,p); showPanel('panel-main'); } 
-        catch(err) { authError.textContent=err.message; }
+        catch(err) { authError.textContent=err.message; hideLoader(); }
     };
+
     logoutBtn.onclick = async () => {
         if(confirm("Wylogować?")) {
             if(masterTimerInterval) clearInterval(masterTimerInterval);
@@ -153,26 +144,21 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    // --- Inicjalizacja ---
     function initAppUI() {
-        // Sprawdź czy trening trwa
-        if (state.activeWorkout.isActive) {
-             if (!masterTimerInterval) { // Tylko jeśli timer jeszcze nie chodzi
-                if (confirm("Wznowić trening?")) {
-                    masterTimerInterval = setInterval(updateMasterTimer, 1000);
-                    masterTimerDisplay.style.display = 'block';
-                    renderActiveWorkout();
-                    showPanel('panel-active-workout');
-                } else {
-                    state.activeWorkout.isActive = false;
-                    saveState();
-                }
-             }
+        if (state.activeWorkout.isActive && !masterTimerInterval) {
+            if (confirm("Wznowić trening?")) {
+                masterTimerInterval = setInterval(updateMasterTimer, 1000);
+                masterTimerDisplay.style.display = 'block';
+                renderActiveWorkout();
+                showPanel('panel-active-workout');
+            } else {
+                state.activeWorkout.isActive = false;
+                saveState();
+            }
         }
         renderLogs();
     }
 
-    // --- Renderowanie Listy Dni (To jest to szybkie!) ---
     function renderDayList() {
       if (!dayList) return;
       dayList.innerHTML = '';
@@ -180,14 +166,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const count = state.plans[dayName] ? state.plans[dayName].length : 0;
         const btn = document.createElement('button');
         btn.className = 'day-btn';
-        // To się wyświetli od razu jako 0, a potem zmieni na np. 5
         btn.innerHTML = `<span>${dayName}</span><span>(${count} ćw.)</span>`;
         btn.onclick = () => showPlanDetails(dayName);
         dayList.appendChild(btn);
       });
     }
 
-    // --- Reszta Funkcji (Skrócona dla czytelności, działa tak samo) ---
     function showPanel(id) {
         panels.forEach(p=>p.classList.remove('active'));
         const target = document.getElementById(id);
@@ -203,7 +187,6 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('.bottom-nav button').forEach(b=>b.onclick=()=>showPanel(b.dataset.panel));
     document.getElementById('backToMainBtn').onclick=()=>showPanel('panel-main');
     
-    // Szczegóły planu
     function showPlanDetails(day) {
         currentDay = day;
         document.getElementById('planDetailsTitle').textContent = `Plan: ${day}`;
@@ -221,7 +204,6 @@ document.addEventListener('DOMContentLoaded', () => {
         showPanel('panel-plan-details');
     }
 
-    // Edytor
     function showPlanEditor(day) {
         currentDay = day;
         document.getElementById('editPlanTitle').textContent=`Edycja: ${day}`;
@@ -241,6 +223,7 @@ document.addEventListener('DOMContentLoaded', () => {
         };
         showPanel('panel-edit-plan');
     }
+
     function renderEditList() {
         const list = document.getElementById('editPlanList'); list.innerHTML='';
         (state.plans[currentDay]||[]).forEach((ex,i)=>{
@@ -253,7 +236,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Trening
     function startWorkout(day) {
         if(!state.plans[day] || !state.plans[day].length) return alert("Pusty plan!");
         state.activeWorkout = { isActive:true, dayName:day, startTime:Date.now(), exercises: state.plans[day].map(e=>({...e, loggedSets:[]})) };
@@ -292,7 +274,6 @@ document.addEventListener('DOMContentLoaded', () => {
         masterTimerDisplay.textContent = new Date(diff).toISOString().slice(11,19);
     }
 
-    // Logi i Wykresy
     function renderLogs() {
         logArea.innerHTML = state.logs.slice().reverse().map(l=>`<div class="card" style="border-left:4px solid green;padding:10px;margin-bottom:5px">
             <strong>${l.date}</strong> ${l.dayName} (${l.duration})<br>
@@ -320,7 +301,6 @@ document.addEventListener('DOMContentLoaded', () => {
         statsChart.update();
     }
     
-    // Import/Export
     document.getElementById('exportBtn').onclick=()=>{
         const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([JSON.stringify(state.logs)],{type:'application/json'}));
         a.download='trening.json'; a.click();
@@ -333,5 +313,4 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('clearHistory').onclick=async()=>{ 
         if(confirm("Usunąć?")) { state.logs=[]; await saveState(); renderLogs(); } 
     };
-
 });

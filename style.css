@@ -1,21 +1,18 @@
 :root {
-  --bg: #f0f4f8;
-  --card: #ffffff;
-  --accent: #ff5722; /* Główny kolor: pomarańczowy/czerwony */
-  --accent-hover: #e64a19;
-  --text: #111;
-  --muted: #666;
-  --success: #4caf50;
-  --danger: #f44336;
-}
-
-/* Motyw Ciemny */
-body.dark {
+  /* USTAWIENIA NA STAŁE (Ciemny Motyw) */
   --bg: #212121;
   --card: #333;
   --text: #f0f0f0;
   --muted: #ccc;
+  
+  /* Kolory akcentów (bez zmian) */
+  --accent: #ff5722;
+  --accent-hover: #e64a19;
+  --success: #4caf50;
+  --danger: #f44336;
 }
+
+/* Usunąłem sekcję body.dark, bo teraz jest domyślna w :root */
 
 body {
   margin: 0;
@@ -25,7 +22,7 @@ body {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  transition: background 0.3s, color 0.3s;
+  /* Usunięto transition, bo nie ma zmiany motywu */
 }
 
 .top {
@@ -87,7 +84,7 @@ select {
   color: var(--text);
   box-shadow: inset 0 1px 3px rgba(0,0,0,0.05);
   transition: border-color 0.2s;
-  min-width: 100px; /* Dla lepszej responsywności */
+  min-width: 100px;
 }
 input:focus, select:focus {
   border-color: var(--accent);
@@ -119,9 +116,10 @@ button:disabled {
 
 .btn-secondary {
   background: var(--muted);
+  color: #111; /* Ciemny tekst na szarym przycisku dla kontrastu */
 }
 .btn-secondary:hover:not(:disabled) {
-  background: #555;
+  background: #999;
 }
 
 .btn-success {
@@ -193,7 +191,7 @@ button:disabled {
     transition: background 0.2s, border-color 0.2s;
 }
 .day-list button:hover {
-    background: var(--bg);
+    background: #444;
     border-color: var(--accent);
 }
 
@@ -210,7 +208,7 @@ button:disabled {
 .logged-sets-list {
     margin: 10px 0;
     padding: 10px;
-    background: var(--bg);
+    background: rgba(0,0,0,0.2); /* Lekko ciemniejsze tło */
     border-radius: 8px;
 }
 .logged-set {
@@ -257,7 +255,7 @@ button:disabled {
   display: flex;
   justify-content: space-around;
   background: var(--card);
-  border-top: 1px solid #ccc;
+  border-top: 1px solid #444;
   position: sticky;
   bottom: 0;
   padding: 8px 0;
@@ -277,7 +275,7 @@ button:disabled {
   padding-bottom: 5px;
 }
 .bottom-nav button:hover {
-  background: var(--bg);
+  background: rgba(255,255,255,0.05);
 }
 
 /* Modale */
